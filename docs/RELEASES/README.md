@@ -89,3 +89,9 @@ Anything ambiguous found while writing this spec. Each becomes an entry in
    is never quietly dropped.
 5. **Requirements are quoted by ID from the SRS**, never paraphrased, so a mismatch between
    the spec and the SRS becomes visible in review.
+6. **Each release is built on its own branch**, `feature/<version>-<short-description>`,
+   and is squash-merged to `main` only after `pnpm lint`, `pnpm typecheck` and `pnpm test`
+   pass. Nothing is committed directly to `main`. See the branch and merge policy in
+   [`../../AGENTS.md`](../../AGENTS.md) Part 8.
+7. **A release is tagged on `main`**, on the merge commit, after the owner has run the exit
+   test. Never on a feature branch. See [`../../VERSIONING.md`](../../VERSIONING.md).

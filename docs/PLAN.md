@@ -39,6 +39,23 @@ search → `0.9.0` reports and operations → `0.10.0` MCP read-only → `0.11.0
 2. Read [`../MEMORY.md`](../MEMORY.md) — what earlier sessions learned, the verified
    environment, and any open threads.
 3. Read the rest of this file, then the current release's spec in [`RELEASES/`](RELEASES/).
+4. Check the branch: `git status`. You should be on `main` with a clean tree. If there is
+   uncommitted work from a previous session, it belongs on a branch, not on `main`.
+
+## How a release reaches `main`
+
+```
+feature/<version>-<short-description>   one feature, one branch
+  → implement, committing as you go
+  → pnpm lint && pnpm typecheck && pnpm test     the merge gate
+  → squash-merge to main, one Conventional Commit
+  → owner runs the exit test
+  → tag vX.Y.Z on main
+```
+
+**Nothing is ever committed directly to `main`.** A branch is merged only after its tests
+pass, so `main` always means "everything so far works". The full policy is in
+[`../AGENTS.md`](../AGENTS.md) Part 8.
 
 ## Rules that apply to every session
 

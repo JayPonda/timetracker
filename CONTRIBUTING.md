@@ -14,8 +14,25 @@ If the current release's specification does not exist yet, write it before writi
 
 ## Working on a release
 
+**One feature, one branch. Nothing is committed directly to `main`.** The branch is merged
+only after its tests pass, so `main` always means "everything so far works".
+
 ```bash
+git switch main
 git switch -c feature/0.3.0-timer-start-stop
+```
+
+Other prefixes: `fix/<short-description>`, `docs/<short-description>`,
+`chore/<short-description>`.
+
+Commit as you go on the branch, then merge when green:
+
+```bash
+pnpm lint && pnpm typecheck && pnpm test      # the merge gate
+git switch main
+git merge --squash feature/0.3.0-timer-start-stop
+git commit                                    # one Conventional Commit for the whole feature
+git branch -d feature/0.3.0-timer-start-stop
 ```
 
 Commits follow Conventional Commits, with the requirement ID whenever one applies:
@@ -62,7 +79,8 @@ one is a defect, not a preference.
 
 ## Review
 
-- One release, one branch, one pull request. Not three features in one.
+- One feature, one branch, one merge. Not three features in one.
+- The branch is merged only after `pnpm lint`, `pnpm typecheck` and `pnpm test` all pass.
 - Reviewers read the acceptance criteria in the release spec first, then the diff.
 - A requirement that turns out to be ambiguous gets written into the spec as a question, not
   decided silently in the code.

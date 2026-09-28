@@ -424,6 +424,50 @@ plus `created_at` and `updated_at` as epoch milliseconds.
 9. Hand the owner the exit-test script from the spec. The next release does not start until
    it passes.
 
+### Branch and merge policy
+
+**Every feature gets its own branch. Nothing is ever committed directly to `main`.** A
+branch is merged to `main` only after its tests pass. This is the owner's standing rule,
+stated 2026-09-28, and it is not a style preference: it is what keeps `main` meaning
+"everything so far works".
+
+Branch names:
+
+| Prefix | For |
+| --- | --- |
+| `feature/<version>-<short-description>` | A release's work, e.g. `feature/0.3.0-timer-start-stop` |
+| `fix/<short-description>` | A fix to something already merged |
+| `docs/<short-description>` | Documentation only |
+| `chore/<short-description>` | Tooling, config, dependencies, CI |
+
+The full loop, from `AGENTS.md` to `main`:
+
+```
+git switch main
+git switch -c feature/0.3.0-timer-start-stop
+  … implement, committing as you go with Conventional Commits …
+git switch main
+git merge --squash feature/0.3.0-timer-start-stop
+git commit          # one clean Conventional Commit, requirement IDs in the message
+git branch -d feature/0.3.0-timer-start-stop
+```
+
+Four rules inside that loop:
+
+1. **No direct commits to `main`.** Not a fix, not a typo, not a doc correction. If it is
+   worth changing, it is worth a branch. The two planning commits already on `main` predate
+   this rule.
+2. **Squash-merge, one commit per feature.** The branch's work-in-progress commits stay on
+   the branch; `main` gets a single commit whose message follows the convention below. This
+   keeps `main` history readable and makes each merge a reviewable unit.
+3. **Merge only when green.** `pnpm lint`, `pnpm typecheck` and `pnpm test` all pass on the
+   branch before the merge. A merge to `main` that breaks the build is a rollback on
+   `main`, which is worse than a fix still sitting on a branch.
+4. **A release is tagged on `main`, never on a branch.** Once the owner has run the exit
+   test, tag the merge commit. `VERSIONING.md` has the tag format.
+
+One feature, one branch. A branch that grows into two unrelated features is two branches.
+
 ### Scope discipline
 
 **Scope is frozen when a release starts.** Anything discovered mid-release goes to

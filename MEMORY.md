@@ -178,6 +178,33 @@ workspaces" in ADR 0001 and as pnpm everywhere else. Recorded as `D-21`.
 **Lesson recorded.** `AGENTS.md` gained a closing section that says when a discovery belongs
 in it and when it belongs here, so the two files do not drift into each other.
 
+### 2026-09-28 — Session 3: the owner's working rule, feature branches
+
+**The rule, as stated by the owner:** one feature per branch, and after the test the branch
+is merged to `main`.
+
+**Written down as a policy, not a habit**, in four places, because an unwritten workflow is
+one an assistant will eventually break:
+
+- `AGENTS.md` Part 8 gained a **Branch and merge policy** section: the four branch prefixes,
+  the exact command loop, and the four rules inside it. The headline rule is *no direct
+  commits to `main`*, with the merge gated on `pnpm lint && pnpm typecheck && pnpm test`
+  all passing on the branch.
+- `CONTRIBUTING.md` now opens with the loop, including the gate command and the squash-merge.
+- `docs/RELEASES/README.md` rules gained the branch and the tag-on-`main` requirement.
+- `VERSIONING.md` and `docs/PLAN.md` cross-reference it, so a session that starts at `PLAN.md`
+  meets the rule in its first screen.
+
+**Two choices made while writing it, worth keeping.** The merge is a **squash**, so `main`
+gets one Conventional Commit per feature and the branch's work-in-progress commits do not
+clutter the history; the alternative, merge commits, gives every mid-session commit the
+status of permanent history. And the **tag goes on the merge commit on `main`**, never on a
+branch, so a tag always points at something that is on the release path.
+
+**Consequence to respect:** the first application commit must land on
+`feature/0.1.0-foundation`, not on `main`. `main` currently holds the two planning commits
+only, which is correct.
+
 ---
 
 ## Open threads
@@ -185,7 +212,8 @@ in it and when it belongs here, so the two files do not drift into each other.
 Things a future session should not have to rediscover. Checked and ticked when done.
 
 - [ ] **No application code exists.** 0.1.0 is the next thing to build, and its spec is
-      already written at `docs/RELEASES/v0.1.0.md`.
+      already written at `docs/RELEASES/v0.1.0.md`. **It starts on
+      `feature/0.1.0-foundation`, not on `main`.**
 - [ ] **`onlyBuiltDependencies` must be added to the root `package.json` before the first
       `pnpm install`**, or `better-sqlite3` will fail at the first query. See the gotcha above.
 - [ ] **Eight open questions** (`OQ-1`…`OQ-8` in `docs/ROADMAP.md` §9) all have stated

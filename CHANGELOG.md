@@ -27,6 +27,15 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 - **Added** a closing section to `AGENTS.md` stating which discoveries belong in that file
   and which belong in `MEMORY.md`, so the two do not drift into each other.
 
+### Process
+
+- **Documented** the feature-branch workflow as a standing rule: one feature per branch,
+  merged to `main` only after `pnpm lint`, `pnpm typecheck` and `pnpm test` pass, and never
+  committed to `main` directly. Merges are squash merges, so `main` gets one Conventional
+  Commit per feature. Release tags are placed on the merge commit on `main`, never on a
+  branch. Recorded in `AGENTS.md` Part 8, `CONTRIBUTING.md`, `docs/PLAN.md`,
+  `docs/RELEASES/README.md` and `VERSIONING.md`.
+
 
 ## Conventions
 

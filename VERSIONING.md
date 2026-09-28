@@ -87,7 +87,10 @@ A release never goes backwards. A version is never reused.
 8. Merge to `main`, then `git tag -a vX.Y.Z -m "X.Y.Z — name"` and push the tag.
 9. Build and push the image tagged `X.Y.Z` and `latest`.
 
-A release is cut only from `main`, never from a feature branch.
+**A release is cut only from `main`, never from a feature branch.** The work happens on
+`feature/<version>-<short-description>`, is squash-merged once its tests are green, and the
+tag goes on the merge commit on `main`. See the branch and merge policy in
+[`AGENTS.md`](AGENTS.md) Part 8.
 
 ## Backport policy
 
