@@ -6,26 +6,30 @@ first time, read files 1 to 4 in order, then jump to the release you are working
 | # | File | Read it when | Length |
 | --- | --- | --- | --- |
 | 1 | [`../README.md`](../README.md) | You want to know what this project is and whether it runs | short |
-| 2 | [`PLAN.md`](PLAN.md) | **Every session.** Current release, rules, what to do next | short |
-| 3 | [`../requirnment.md`](../requirnment.md) | You need the exact wording of a requirement | long, 828 lines |
-| 4 | [`ROADMAP.md`](ROADMAP.md) | You need the strategy, the twelve releases, traceability, risks | long |
-| 5 | [`RELEASES/vX.Y.Z.md`](RELEASES/) | You are building a specific release | medium each |
-| 6 | [`adr/`](adr/) | You want to know why a technical choice was made | one page each |
-| 7 | [`DECISIONS.md`](DECISIONS.md) | The SRS left a question open and you need the answer | short |
-| 8 | [`DEFERRED.md`](DEFERRED.md) | Someone asks for something that is not in 1.0 | short |
-| 9 | [`TESTING.md`](TESTING.md) | You are writing tests or fixing a failing one | medium |
-| 10 | [`PERF.md`](PERF.md) | You are adding something that could slow the app | short |
-| 11 | [`../VERSIONING.md`](../VERSIONING.md) | You are cutting a release | short |
-| 12 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | You are about to open a branch | short |
-| 13 | [`../BACKLOG.md`](../BACKLOG.md) | You found something that does not fit the current release | short |
-| 14 | [`../CHANGELOG.md`](../CHANGELOG.md) | You want to know what changed and when | grows over time |
+| 2 | [`../AGENTS.md`](../AGENTS.md) | **Every session.** The rules of this repository, from setup to rejected patterns | long |
+| 3 | [`PLAN.md`](PLAN.md) | **Every session.** Current release, what to do next | short |
+| 4 | [`../MEMORY.md`](../MEMORY.md) | **Every session**, after AGENTS.md. What earlier sessions learned, and what is true of this machine | medium, grows |
+| 5 | [`../requirnment.md`](../requirnment.md) | You need the exact wording of a requirement | long, 828 lines |
+| 6 | [`ROADMAP.md`](ROADMAP.md) | You need the strategy, the twelve releases, traceability, risks | long |
+| 7 | [`RELEASES/vX.Y.Z.md`](RELEASES/) | You are building a specific release | medium each |
+| 8 | [`adr/`](adr/) | You want to know why a technical choice was made | one page each |
+| 9 | [`DECISIONS.md`](DECISIONS.md) | The SRS left a question open and you need the answer | short |
+| 10 | [`DEFERRED.md`](DEFERRED.md) | Someone asks for something that is not in 1.0 | short |
+| 11 | [`TESTING.md`](TESTING.md) | You are writing tests or fixing a failing one | medium |
+| 12 | [`PERF.md`](PERF.md) | You are adding something that could slow the app | short |
+| 13 | [`../VERSIONING.md`](../VERSIONING.md) | You are cutting a release | short |
+| 14 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | You are about to open a branch | short |
+| 15 | [`../BACKLOG.md`](../BACKLOG.md) | You found something that does not fit the current release | short |
+| 16 | [`../CHANGELOG.md`](../CHANGELOG.md) | You want to know what changed and when | grows over time |
 
 ## Which document answers which question
 
 | Question | Answer lives in |
 | --- | --- |
 | What is the product and how do I run it? | `README.md` |
+| What are the rules of working in this repository? | `AGENTS.md` |
 | What am I building right now? | `PLAN.md` |
+| What did earlier sessions learn, and what is true of this machine? | `MEMORY.md` |
 | Why is the timer built before the calendar? | `ROADMAP.md` §1 |
 | What exactly is in 0.5.0? | `RELEASES/v0.5.0.md` |
 | Why Fastify and not Express? | `adr/0001-stack-and-deployment.md` |

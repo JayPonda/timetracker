@@ -10,7 +10,23 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
-Nothing yet. The next entry is `0.1.0` — Foundation & runtime.
+### Documentation
+
+- **Added** `AGENTS.md`, rewritten in full as the project constitution: the value loop, the
+  eleven ground rules, setup from zero, the command surface, the architecture, the database
+  invariants enforced by the schema itself, the request flow, the agreed data model, the
+  release workflow, and a table of rejected patterns with the reason each was rejected.
+- **Added** `MEMORY.md` for cross-session continuity: a verified environment snapshot, the
+  gotchas discovered, the twelve SRS conflicts already resolved, a session log, and open
+  threads for the next session.
+- **Changed** the monorepo standardises on **pnpm workspaces**; ADR 0001 previously said npm
+  while every other document said pnpm. Recorded as `D-21`. The root `package.json` must
+  declare `pnpm.onlyBuiltDependencies: ["better-sqlite3"]`, because pnpm 10 and later block
+  dependency install scripts by default and `better-sqlite3` needs its install script to
+  place or compile the native binding.
+- **Added** a closing section to `AGENTS.md` stating which discoveries belong in that file
+  and which belong in `MEMORY.md`, so the two do not drift into each other.
+
 
 ## Conventions
 

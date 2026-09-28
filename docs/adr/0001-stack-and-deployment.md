@@ -35,7 +35,7 @@ app.
 across the stack keeps the container small and the mental model small. This closes `Q5`
 in favour of the SRS's own proposal.
 
-**Layout.** npm workspaces monorepo:
+**Layout.** pnpm workspaces monorepo:
 
 ```
 apps/api        Fastify REST API, migrations, scheduler, static file serving

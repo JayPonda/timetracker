@@ -33,6 +33,13 @@ search → `0.9.0` reports and operations → `0.10.0` MCP read-only → `0.11.0
 
 **Rule: a release does not start until the previous release's exit test has passed.**
 
+## Start of session
+
+1. Read [`../AGENTS.md`](../AGENTS.md) — the rules of this repository.
+2. Read [`../MEMORY.md`](../MEMORY.md) — what earlier sessions learned, the verified
+   environment, and any open threads.
+3. Read the rest of this file, then the current release's spec in [`RELEASES/`](RELEASES/).
+
 ## Rules that apply to every session
 
 1. **One write path.** Business-rule mutations go through service functions. Route
@@ -65,14 +72,16 @@ search → `0.9.0` reports and operations → `0.10.0` MCP read-only → `0.11.0
 
 | I need to… | Read |
 | --- | --- |
+| Know the rules of working in this repository | [`../AGENTS.md`](../AGENTS.md) |
 | Know what is being built and why | [`ROADMAP.md`](ROADMAP.md) |
 | Know what to build right now | this file, then [`RELEASES/`](RELEASES/) |
+| Recall what earlier sessions learned | [`../MEMORY.md`](../MEMORY.md) |
 | Understand a technical decision | [`adr/`](adr/) |
 | Check a judgement call the SRS left open | [`DECISIONS.md`](DECISIONS.md) |
 | Know what is deliberately not in 1.0 | [`DEFERRED.md`](DEFERRED.md) |
 | Know how to run the tests | [`TESTING.md`](TESTING.md) |
 | Know the performance budget | [`PERF.md`](PERF.md) |
-| Run commands or follow conventions | [`../AGENTS.md`](../AGENTS.md) |
+| Run commands or follow conventions | [`../AGENTS.md`](../AGENTS.md) Part 4 |
 | Start, stop, back up, restore, upgrade, remove | [`../README.md`](../README.md) |
 | Understand a requirement ID | [`../requirnment.md`](../requirnment.md) |
 

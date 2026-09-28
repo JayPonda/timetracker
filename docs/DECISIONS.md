@@ -50,6 +50,7 @@ a gap, and each is written up as an ADR or a roadmap finding.
 | `D-18` | Navigation for unbuilt features is visible but disabled, with the release named. | A 0.1.0 shell that looks like 1.0.0 trains the owner to expect features that do not exist | Release 0.1.0 |
 | `D-19` | Version numbering continues past 0.9.0 as 0.10.0 and 0.11.0. | Correct semver; a patch bump for a feature release would be wrong | [`../VERSIONING.md`](../VERSIONING.md), `OQ-2` |
 | `D-20` | The product is Personal Day Manager (PDM) in the UI and docs; repository and container names are unchanged. | Resolves S9; renaming the repository is the owner's call, not the build's | Roadmap §8, `OQ-6` |
+| `D-21` | The monorepo uses **pnpm workspaces**, not npm workspaces, and the root `package.json` declares `pnpm.onlyBuiltDependencies: ["better-sqlite3"]`. | pnpm 10 and later block dependency install scripts by default, and `better-sqlite3` needs its install script to place or compile the binary. Strict dependency isolation also surfaces a missing `package.json` entry as an error rather than silently resolving it. Standardising here also removed a real inconsistency: ADR 0001 said npm while every other document said pnpm | `AGENTS.md` Part 3, `MEMORY.md` gotchas |
 
 ## How a decision gets changed
 

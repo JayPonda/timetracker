@@ -115,7 +115,7 @@ Full rationale per decision in the ADRs. This is the summary.
 | Scheduler | In-process loop, 1-second tick, plus `reminder_deliveries` with unique key `(reminder_id, occurrence_at)` | Double-fire protection (`FR-REM-10`) becomes a DB constraint instead of app logic; a startup sweep marks missed (`FR-REM-09`) |
 | Alerts | SSE stream + Notifications API + in-app popup + sound (WebAudio-generated, no asset files) | Offline-friendly, loopback-only, no external asset (`C4`, `NFR-PRIV-01`) |
 | Frontend | **Vite + React 19 + React Router + TanStack Query + Tailwind v4**, hand-rolled accessible components, light/dark from the OS | Static build served by the same container → no CORS, no second container; no heavy component library |
-| Monorepo | npm workspaces: `apps/api`, `apps/web`, `apps/mcp`, `packages/shared` (types + zod schemas shared by API and MCP) | One install, one test run, one version stamp |
+| Monorepo | pnpm workspaces: `apps/api`, `apps/web`, `apps/mcp`, `packages/shared` (types + zod schemas shared by API and MCP) | One install, one test run, one version stamp, and strict dependency isolation that surfaces a missing `package.json` entry as an error |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP + stdio; token → principal → capability map with **default deny** | `MCP-14` is enforced in the app, so the safety limit survives even a modified MCP server (`US-25`) |
 | Tests | Vitest (services, API, shared) against a temp-file SQLite, `app.inject()`; ≥80% on business-rule modules; Playwright smoke before 1.0 | `NFR-MAINT-01` |
 | CI | GitHub Actions: lint, typecheck, test, build, `docker compose config`, image build | Releases are reproducible (`DEP-01`) |
