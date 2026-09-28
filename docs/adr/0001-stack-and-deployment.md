@@ -68,9 +68,10 @@ daily-use configuration; the README leads with the stdio setup.
 
 **Container hardening.** Multi-stage build; the runtime stage contains only production
 dependencies and the built frontend; a dedicated non-root user owns `/data` and
-`/backups`; `restart: unless-stopped`; a health check hitting `/health`; no host mounts
-other than `./data` and `./backups`; no capabilities, no privileged mode, no host
-network.
+`/backups`; `restart: unless-stopped`; a health check hitting `/health`; the data
+in Docker-managed volumes rather than host bind mounts (revised — see
+[ADR 0010](0010-migration-container.md) and the note in `docker-compose.yml`);
+no capabilities, no privileged mode, no host network.
 
 **Client.** A modern desktop browser. No CDN, no external fonts, no analytics, no
 outgoing request of any kind from the app or the frontend (`NFR-PRIV-01`). The reminder
@@ -103,7 +104,9 @@ single-user app needs, and a slower cold start in a container.
 
 **Prisma.** A generated client is a build step and a migration language of its own. The
 SRS requires auditable, versioned migrations (`NFR-MAINT-02`); hand-written SQL with a
-thin typed query layer is easier to audit and has no codegen.
+thin typed query layer is easier to audit and has no codegen. The *runner* for those SQL
+files is Umzug, per [ADR 0009](0009-migration-runner-umzug.md) — that choice concerns who
+applies the migrations, not who authors them.
 
 **Python with FastAPI.** Diverges from the SRS's own proposal and puts a second language in
 the stack for the MCP server.

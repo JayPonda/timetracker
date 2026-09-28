@@ -242,7 +242,7 @@ Run from the repository root.
 ```bash
 # Everyday
 pnpm install                  # install all workspaces
-pnpm dev                      # API and web dev servers
+pnpm dev                      # migrate, then API and web dev servers
 pnpm build                    # build all workspaces
 pnpm lint                     # ESLint
 pnpm lint:fix                 # ESLint with autofix
@@ -266,8 +266,9 @@ pnpm --filter api search:rebuild     # rebuild the search index
 pnpm --filter api backup             # take a backup now
 
 # Docker
-docker compose up -d                # start
-docker compose logs -f pdm          # logs
+docker compose up -d                # migrate, then start
+docker compose logs -f pdm          # app logs
+docker compose logs pdm-migrate     # what the migration container did
 docker compose down                 # stop, keep data
 docker compose config               # validate the compose file
 ```
@@ -279,7 +280,22 @@ docker compose config               # validate the compose file
 
 The app serves the API and the built frontend from **one** process in **one** container.
 There is no separate frontend container, no proxy, and no CORS. `pdm-mcp` is the only other
-container and arrives in 0.10.0.
+service and arrives in 0.10.0.
+
+**Migrations run in their own container, not at boot.** `pdm-migrate` is a one-shot job
+from the same image: it applies every pending migration, seeds settings, and exits. `pdm`
+declares `depends_on: pdm-migrate: service_completed_successfully` and is never started
+unless the migrator exited 0. Two consequences worth knowing:
+
+- **The application refuses to boot against an un-migrated schema.** It does not apply
+  migrations itself; it checks and throws `SchemaNotReadyError`. If you see that error,
+  run `docker compose up -d` or `pnpm migrate`, not a manual fix.
+- **A migration is baked into the image.** Adding a `.sql` file requires
+  `docker compose build` before `up`, or the container will not see it. This is deliberate:
+  the schema is tied to the build that expects it.
+
+`docker compose restart pdm` restarts only the app and does **not** re-run migrations.
+Use `docker compose up -d` when the schema changes. `docs/adr/0010-migration-container.md`.
 
 The API listens on `0.0.0.0` **inside** the container on purpose, and the published port is
 bound to `127.0.0.1` on the host. Docker's port publishing is the network boundary. Do not
@@ -332,7 +348,7 @@ you find yourself wanting to write SQL in a route, the thing you want is a servi
 | API | Fastify | Schema validation, `app.inject()` for network-free tests |
 | Database | SQLite via `better-sqlite3` | Synchronous, so transactions are trivially correct |
 | Pragmas | `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL` | WAL for `NFR-REL-01` |
-| Data access | Drizzle ORM for typed queries, hand-written SQL migrations | Migrations stay auditable |
+| Data access | Drizzle ORM for typed queries, hand-written SQL migrations run by Umzug | Migrations stay auditable; the runner is not ours to maintain (ADR 0009) |
 | Frontend | Vite + React + React Router + TanStack Query + Tailwind | Static build served by the same process |
 | Monorepo | pnpm workspaces | `onlyBuiltDependencies` required — see Part 3 |
 | Scheduler | In-process loop, 1-second tick | Writes only when it actually fires something |

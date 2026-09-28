@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.env.*
+node_modules
+**/node_modules
+**/dist
+coverage
+data
+backups
+docs
+*.md
+.vscode
+.idea

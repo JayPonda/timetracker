@@ -43,17 +43,166 @@ deletes, so a bug cannot erase your work.
 
 ```bash
 cp .env.example .env      # optional; every value has a working default
-docker compose up -d      # start
+docker compose up -d      # start (migrates first, then serves)
 docker compose logs -f pdm
 docker compose down       # stop, keeping data
-docker compose down -v && rm -rf ./data   # remove, including data
+docker compose down -v    # remove, including the data
 ```
 
 Then open `http://127.0.0.1:8080`.
 
-The full operations guide — start, stop, restart, logs, backup, restore, upgrade, removal,
-and configuring an MCP client — is written in 0.1.0 and 0.9.0. The release plan for those
-is in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+## Operations
+
+Every command is run from the repository root, with Docker Desktop running.
+
+### Install
+
+1. Install Docker Desktop or Docker Engine.
+2. **Start Docker at login.** The container has `restart: unless-stopped`, so it
+   comes back after a reboot — but only if Docker itself is running. On macOS:
+   *Settings → General → Start Docker Desktop at login*.
+3. Clone the repository and start it:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   The first run builds the image, applies every migration, and seeds the
+   settings. It takes a couple of minutes. Nothing is installed on the host
+   except Docker: no Node, no database, no runtime.
+
+There is **no `chown` step and no directory to create.** The data lives in
+Docker-managed volumes, so it works the same for every user on the first run.
+
+### Start
+
+```bash
+docker compose up -d          # start
+docker compose up -d --wait   # start and block until healthy
+```
+
+Check it is up:
+
+```bash
+docker compose ps             # pdm: running (healthy)
+curl -fsS http://127.0.0.1:8080/health
+```
+
+### Stop
+
+```bash
+docker compose down           # stop, keep the data
+```
+
+### Restart
+
+```bash
+docker compose restart pdm          # restart the app
+docker compose restart              # restart everything, including the migrator
+```
+
+`docker compose restart pdm` deliberately does **not** re-run migrations. It
+restarts only the application. Use `docker compose up -d` after a rebuild when
+the schema has changed.
+
+### Logs
+
+```bash
+docker compose logs -f pdm          # follow the app
+docker compose logs pdm-migrate     # what the migration run did
+docker compose logs --tail=100 pdm  # last 100 lines
+```
+
+`pdm-migrate` is a one-shot job container, so its logs end with the migrations
+it applied and then stop. Seeing it `exited (0)` is the healthy state.
+
+### Backup
+
+Automatic daily backups arrive in 0.9.0. Take one now with:
+
+```bash
+docker compose exec pdm node api/cli/backup.js
+```
+
+It writes to the backups volume and prints the path. The output is a consistent
+snapshot taken with SQLite's `VACUUM INTO` — never a plain file copy, which
+under WAL would capture a torn database.
+
+Every migration also takes a backup of the pre-migration database first, and
+restores it automatically if that migration fails.
+
+### Restore
+
+```bash
+docker compose ls                       # find the backup file name
+docker compose down                     # the app must be stopped first
+docker compose run --rm --no-deps -T pdm node api/cli/restore.js /backups/<file>.db
+docker compose up -d --wait
+```
+
+The app **must be stopped** before restoring. Overwriting a database that is
+open and being written to is how a database gets corrupted, so the sequence
+above stops the app, restores in a one-off container that mounts the same
+volumes, and only then starts the app again.
+
+`docker compose run` is used rather than `exec` because `exec` needs a running
+container, and the whole point is that nothing should be running.
+
+Verified: a database with 8 settings rows was restored to 7, the extra row gone,
+and the app came back healthy.
+
+List the available backups with:
+
+```bash
+docker compose run --rm --no-deps -T pdm ls -1 /backups
+```
+
+### Upgrade
+
+```bash
+git pull
+docker compose build        # required: migrations are baked into the image
+docker compose up -d --wait # the migrator applies anything new, then the app starts
+```
+
+The `build` step is not optional. A migration is a file inside the image, so
+without a rebuild the migrator reports "up to date" and starts the app on the
+old schema.
+
+If a migration fails, it is rolled back, the pre-migration backup is restored,
+the migrator exits non-zero naming that backup, and **the app is never started.**
+
+### Remove
+
+```bash
+docker compose down -v    # stop and delete the containers and the data volumes
+```
+
+This destroys the database. Take a backup first if you want to keep it.
+
+### Reaching the database
+
+The database is a plain SQLite file. To open it with any SQLite client, copy it
+out first — do not point a client at the live file while the app is running:
+
+```bash
+docker compose cp pdm:/data/pdm.db ./pdm.db
+sqlite3 ./pdm.db 'select count(*) from settings;'
+```
+
+### Where the data lives
+
+```bash
+docker volume ls | grep pdm       # pdm_pdm-data, pdm_pdm-backups
+```
+
+Host bind mounts were tried first and abandoned: they failed intermittently on
+the development machine (1 of 5 runs from the repository folder, 2 of 5 from a
+local path, against 6 of 6 for a named volume — same image, same command). The
+symptom was `SQLITE_CANTOPEN`, and once the running app was caught holding
+`/data/pdm.db (deleted)`, which is a live database that disappears on restart. A
+named volume removes that failure class instead of documenting around it. The
+reasoning is recorded in `docker-compose.yml` itself.
 
 ## How it is built
 

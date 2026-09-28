@@ -1,0 +1,19 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm 10 and later do not run dependency install scripts by default, and
+# better-sqlite3's install script is what places or compiles its native
+# binding. Without this opt-in `pnpm install` appears to succeed and the first
+# database query fails with a missing or invalid binding. See AGENTS.md Part 3.
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+
+# `pnpm deploy` copies the workspace package into the deployed directory instead
+# of symlinking to it, so the Docker image has a self-contained dependency tree
+# with no symlink pointing outside the image.
+injectWorkspacePackages: true
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true

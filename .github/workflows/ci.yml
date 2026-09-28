@@ -1,0 +1,102 @@
+# Continuous integration (acceptance criterion 15, NFR-MAINT-02).
+#
+# Two jobs, on purpose.
+#
+# `gates` is the release gate: the four commands from criterion 14, in a clean
+# checkout, on the default branch. Criterion 14 says "from a clean install", so
+# this job installs with `--frozen-lockfile` and builds nothing by hand — if a
+# gate passes here it passes on a fresh clone, which is the failure mode that
+# bit Session 6 (see MEMORY.md).
+#
+# `image` builds the Docker image. It is separate because it is slow and fails
+# for different reasons: a native `better-sqlite3` build breaking against a new
+# Node base image is the risk the 0.1.0 spec names, and it is invisible to
+# lint, types and unit tests. Building the image is what catches it, and it is
+# cheaper here than discovering it on the owner's laptop.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes the older run irrelevant. Without this a
+# long Docker build on a busy branch keeps older jobs alive for nothing.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here on purpose. pnpm/action-setup reads the
+      # `packageManager` field in the root package.json, so the version lives in
+      # one place and CI cannot drift from what the repo says it uses.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Node version in the Dockerfile. A gate that passes on 24
+          # and fails on 22 is not a gate for this image.
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Integration test
+        run: pnpm test:int
+
+      - name: Build
+        run: pnpm build
+
+  image:
+    name: docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build only. The image is not pushed from CI: this app runs on one
+      # laptop and has no registry, and NFR-PRIV-01 means there is nothing
+      # worth distributing. Pushing would also mean the owner's data layout
+      # becoming someone else's problem.
+      - name: Build image
+        run: docker build --tag pdm:ci .
+
+      # Prove the built image actually starts and migrates, not merely compiles.
+      # `docker build` succeeding says nothing about whether the entrypoint
+      # works, which is where the one-shot migrator lives. The data lives in a
+      # named volume, so there is no directory to create or chown here.
+      - name: Start and wait for healthy
+        run: |
+          docker compose up -d --wait
+          docker compose ps -a
+          curl -fsS "http://127.0.0.1:${PDM_PORT:-8080}/health"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v
