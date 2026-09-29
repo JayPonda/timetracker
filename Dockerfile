@@ -93,6 +93,19 @@ VOLUME ["/data", "/backups"]
 
 USER pdm
 
+# The version, baked in from the tag at build time (`VERSIONING.md`).
+#
+# It is an ARG and not only a build-time constant because the fallback to
+# reading the root `package.json` cannot be relied on in the image: the runtime
+# stage copies `apps/api/dist`, not the repository root. A build arg makes the
+# image self-describing — two builds of two different tags cannot report the
+# same version even if the file lookup is ever removed.
+#
+# Defaults to empty so `docker build .` with no arguments still works, and the
+# app then falls back to reading `package.json`.
+ARG PDM_VERSION=""
+ENV PDM_VERSION=${PDM_VERSION}
+
 ENV NODE_ENV=production \
     PDM_DATA_DIR=/data \
     PDM_BACKUP_DIR=/backups \

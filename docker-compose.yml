@@ -23,7 +23,13 @@ x-pdm-common: &pdm-common
   build:
     context: .
     dockerfile: Dockerfile
-  image: pdm:0.1.0
+    # Baked in so the image and `/health` agree, and both come from the one
+    # version string. Compose cannot read `package.json`, so the default is the
+    # repository's current version; release CI overrides PDM_VERSION from the
+    # tag, which is the only place a release number is written down.
+    args:
+      PDM_VERSION: ${PDM_VERSION:-0.1.0}
+  image: pdm:${PDM_VERSION:-0.1.0}
 
   environment:
     NODE_ENV: production

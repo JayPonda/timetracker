@@ -45,6 +45,20 @@ describe('DEP-06: GET /health reports the app is alive', () => {
     expect(body.uptime_s).toBeGreaterThanOrEqual(0);
   });
 
+  it('reports elapsed process time, not the time the request took', async () => {
+    // The regression this pins: `startedAt` was read inside the handler, so
+    // `uptime_s` was the gap between arrival and response and therefore always
+    // 0. Asserting only `>= 0` would pass against the broken code, which is the
+    // other half of why it survived 0.1.0.
+    setNowMsForTesting(() => 1_000_000);
+    const { app: server } = await app();
+    setNowMsForTesting(() => 1_000_000 + 90_000);
+
+    const body = (await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>();
+
+    expect(body.uptime_s).toBe(90);
+  });
+
   it('matches the shared schema, so the web app can trust it', async () => {
     const { app: server } = await app();
     const body = (await server.inject({ method: 'GET', url: '/health' })).json();

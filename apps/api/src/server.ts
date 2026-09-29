@@ -6,6 +6,7 @@ import type { Database as Db } from 'better-sqlite3';
 import { ERROR_CODES, nowMs, type ErrorEnvelope, type HealthResponse } from '@pdm/shared';
 import type { AppConfig } from './config/index.js';
 import { migrationStatus } from './db/migrate.js';
+import { VERSION } from './version.js';
 
 export interface CreateServerOptions {
   config: AppConfig;
@@ -30,9 +31,15 @@ export function createServer({ config, db }: CreateServerOptions): FastifyInstan
     trustProxy: false,
   });
 
+  // Captured once, when the server is built, not per request. The previous code
+  // read the clock inside the `/health` handler, so `uptime_s` measured the gap
+  // between a request arriving and the response being built — always 0. A field
+  // that always reads zero is worse than no field, because it looks like data.
+  const startedAtMs = nowMs();
+
   registerRequestId(app);
   registerErrorEnvelope(app, config.PDM_WEB_DIR);
-  registerHealth(app, db, config);
+  registerHealth(app, db, config, startedAtMs);
   // Registered last: the SPA fallback owns the not-found handler, so it is
   // installed only after every API route and every real asset has claimed its
   // path. Fastify permits exactly one not-found handler per scope, which is why
@@ -140,12 +147,23 @@ function registerErrorEnvelope(app: FastifyInstance, webDir: string | undefined)
  * 503 with `db: "error"` and the reason logged is the documented behaviour
  * (acceptance criterion 2).
  */
-function registerHealth(app: FastifyInstance, db: Db, config: AppConfig): void {
+function registerHealth(
+  app: FastifyInstance,
+  db: Db,
+  config: AppConfig,
+  startedAtMs: number,
+): void {
+  /**
+   * Process age in whole seconds, from the same seam as everything else
+   * (`nowMs()`, AGENTS.md ground rule 4) and the moment the server was built.
+   */
+  const uptimeSeconds = (): number =>
+    Math.max(0, Math.floor((nowMs() - startedAtMs) / 1000));
+
   app.get('/health', async (_req, reply) => {
     // Read from the validated config, not process.env. The config was parsed
     // once at boot, and a value could have been defaulted there.
     const { TZ: timeZone } = config;
-    const startedAt = Math.floor(nowMs() / 1000);
 
     try {
       db.prepare('SELECT 1').get();
@@ -153,8 +171,8 @@ function registerHealth(app: FastifyInstance, db: Db, config: AppConfig): void {
       const body: HealthResponse = {
         status: 'ok',
         db: 'ok',
-        version: process.env.npm_package_version ?? '0.1.0',
-        uptime_s: Math.max(0, Math.floor(nowMs() / 1000) - startedAt),
+        version: VERSION,
+        uptime_s: uptimeSeconds(),
         migrations: {
           applied: status.applied.length,
           pending: status.pending.length,
@@ -171,8 +189,8 @@ function registerHealth(app: FastifyInstance, db: Db, config: AppConfig): void {
       const body: HealthResponse = {
         status: 'error',
         db: 'error',
-        version: process.env.npm_package_version ?? '0.1.0',
-        uptime_s: Math.max(0, Math.floor(nowMs() / 1000) - startedAt),
+        version: VERSION,
+        uptime_s: uptimeSeconds(),
         migrations: { applied: 0, pending: 0, ok: false },
         time_zone: timeZone,
         db_error: message,
