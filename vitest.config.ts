@@ -14,5 +14,17 @@ export default defineConfig({
       'packages/shared/src/**/*.test.ts',
     ],
     globals: true,
+
+    /**
+     * The application logger is silent in tests by default.
+     *
+     * A module-level message — `no frontend build; serving the API only` — is
+     * printed once per test that builds a server, which buries a real failure in
+     * dozens of repeated lines. The level is still settable, so
+     * `LOG_LEVEL=debug pnpm test` shows everything.
+     */
+    env: {
+      LOG_LEVEL: process.env['LOG_LEVEL'] ?? 'silent',
+    },
   },
 });

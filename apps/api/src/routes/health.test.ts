@@ -81,7 +81,7 @@ describe('DEP-06: the health check is a real check', () => {
     // A container that is up but has not finished migrating must not claim to be
     // healthy, or `docker compose up` returns before the schema is ready.
     const { app: server, db } = await app();
-    db.prepare('DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)').run();
+    db.prepare('DELETE FROM knex_migrations WHERE id = (SELECT MAX(id) FROM knex_migrations)').run();
 
     const body = (await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>();
     expect(body.migrations.pending).toBe(1);

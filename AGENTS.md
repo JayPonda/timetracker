@@ -290,7 +290,7 @@ unless the migrator exited 0. Two consequences worth knowing:
 - **The application refuses to boot against an un-migrated schema.** It does not apply
   migrations itself; it checks and throws `SchemaNotReadyError`. If you see that error,
   run `docker compose up -d` or `pnpm migrate`, not a manual fix.
-- **A migration is baked into the image.** Adding a `.sql` file requires
+- **A migration is baked into the image.** Adding a `.js` migration file requires
   `docker compose build` before `up`, or the container will not see it. This is deliberate:
   the schema is tied to the build that expects it.
 
@@ -348,7 +348,7 @@ you find yourself wanting to write SQL in a route, the thing you want is a servi
 | API | Fastify | Schema validation, `app.inject()` for network-free tests |
 | Database | SQLite via `better-sqlite3` | Synchronous, so transactions are trivially correct |
 | Pragmas | `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL` | WAL for `NFR-REL-01` |
-| Data access | Drizzle ORM for typed queries, hand-written SQL migrations run by Umzug | Migrations stay auditable; the runner is not ours to maintain (ADR 0009) |
+| Data access | Knex query builder and Knex-run migrations over `better-sqlite3` | One way to write queries, not two. `NNNN_name.js` migrations embed the reviewed SQL; the wrapper keeps backup, restore-and-abort and contiguity, and `knex_migrations` is the only ledger (ADR 0012) |
 | Frontend | Vite + React + React Router + TanStack Query + Tailwind | Static build served by the same process |
 | Monorepo | pnpm workspaces | `onlyBuiltDependencies` required — see Part 3 |
 | Scheduler | In-process loop, 1-second tick | Writes only when it actually fires something |
@@ -413,9 +413,9 @@ breaking migration. This is the agreed shape, not yet created.
 | `settings` | Key and value | Written with defaults on first boot |
 | `activity_log` | The task history | Every status change and every post-closure edit |
 
-Derived and system tables, exempt from the no-delete triggers: `schema_migrations`,
-`search_documents` and its FTS5 index, `reminder_deliveries`, `mcp_tokens`,
-`mcp_audit_log`.
+Derived and system tables, exempt from the no-delete triggers: `knex_migrations`,
+`knex_migrations_lock`, `search_documents` and its FTS5 index, `reminder_deliveries`,
+`mcp_tokens`, `mcp_audit_log`.
 
 Every user-data table carries `uid TEXT NOT NULL UNIQUE` and `archived_at INTEGER NULL`,
 plus `created_at` and `updated_at` as epoch milliseconds.

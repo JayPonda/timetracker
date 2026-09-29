@@ -1,3 +1,12 @@
+// Migration 0001_settings.
+//
+// The DDL below is the reviewed hand-written SQL, preserved byte-for-byte;
+// it is executed inside a native better-sqlite3 transaction so a failure
+// rolls back the whole migration and leaves no half schema (DATA-10). The
+// down migration is deliberately unsupported: PDM never drops a schema
+// object, any more than it deletes a row.
+
+const SQL = `
 -- 0002: settings, created now with its defaults.
 --
 -- Built in 0.1.0 even though no settings screen exists yet, because every later
@@ -5,9 +14,9 @@
 -- its own. Writing the defaults here rather than as lazy fallbacks scattered
 -- through the code keeps one code path for reading a setting.
 --
--- `settings` is a user-data table, so it carries `uid` and `archived_at` from
+-- \`settings\` is a user-data table, so it carries \`uid\` and \`archived_at\` from
 -- its first migration (AGENTS.md ground rule 8, DATA-13) and is protected by a
--- BEFORE DELETE trigger. `uid` is meaningless for a key/value row, which is the
+-- BEFORE DELETE trigger. \`uid\` is meaningless for a key/value row, which is the
 -- one exemption in the ADR, and the key remains the primary key.
 CREATE TABLE IF NOT EXISTS settings (
   key         TEXT    PRIMARY KEY,
@@ -27,3 +36,20 @@ BEFORE DELETE ON settings
 BEGIN
   SELECT RAISE(ABORT, 'settings rows are archived, never deleted (DATA-10)');
 END;
+
+`;
+
+export async function up(knex) {
+  const conn = await knex.client.acquireConnection();
+  try {
+    conn.transaction(() => {
+      conn.exec(SQL);
+    })();
+  } finally {
+    await knex.client.releaseConnection(conn);
+  }
+}
+
+export async function down() {
+  throw new Error('PDM migrations are additive only; there is no down migration.');
+}

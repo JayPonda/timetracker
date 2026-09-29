@@ -1,6 +1,7 @@
 import { loadConfig } from '../config/index.js';
 import { databasePath, openDb } from '../db/connection.js';
 import { migrate, seedSettings } from '../db/migrate.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * `pnpm --filter api migrate`, and the command the `pdm-migrate` container runs.
@@ -22,20 +23,21 @@ try {
   const result = await migrate(db, { backupDir: config.PDM_BACKUP_DIR, dbPath: file });
 
   if (result.applied.length === 0) {
-    console.log(`[pdm] up to date, ${String(result.skipped.length)} migration(s) already applied`);
+    logger.info('migrate.ts', 'migrate', 'up to date', { already_applied: result.skipped.length });
   } else {
     for (const m of result.applied) {
-      console.log(`[pdm] applied ${String(m.version).padStart(4, '0')}_${m.name}`);
+      logger.info('migrate.ts', 'migrate', 'migration applied', {
+        migration: `${String(m.version).padStart(4, '0')}_${m.name}`,
+      });
     }
   }
 
   const written = seedSettings(db);
-  console.log(`[pdm] settings: ${String(written)} new default(s) written`);
+  logger.info('migrate.ts', 'migrate', 'settings seeded', { defaults_written: written });
 } catch (error) {
-  // A stack trace here would bury the message that names the backup file, which
-  // is the line the owner actually needs.
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`[pdm] migration failed:\n${message}`);
+  // The message comes first and the stack after it, so the line naming the
+  // backup file is not buried under a traceback.
+  logger.error('migrate.ts', 'migrate', 'migration failed', { err: error });
   db.close();
   process.exit(1);
 }

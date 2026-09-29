@@ -3,6 +3,7 @@ import { backupDatabase } from './db/backup.js';
 import { databasePath, openDb } from './db/connection.js';
 import { migrationStatus, seedSettings, type MigrationStatus } from './db/migrate.js';
 import { loadConfig } from './config/index.js';
+import { logger } from './lib/logger.js';
 import { createServer } from './server.js';
 
 /**
@@ -75,10 +76,13 @@ export async function boot(): Promise<{ close: () => Promise<void> }> {
     throw cause;
   }
 
-  console.log(
-    `[pdm] listening on ${config.PDM_BIND_HOST}:${String(config.PDM_INTERNAL_PORT)} ` +
-      `(tz ${config.TZ}, data ${config.PDM_DATA_DIR}, ${String(status.applied.length)} migration(s) applied)`,
-  );
+  logger.info('index.ts', 'boot', 'listening', {
+    host: config.PDM_BIND_HOST,
+    port: config.PDM_INTERNAL_PORT,
+    time_zone: config.TZ,
+    data_dir: config.PDM_DATA_DIR,
+    migrations_applied: status.applied.length,
+  });
 
   return {
     close: async () => {

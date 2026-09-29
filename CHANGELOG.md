@@ -10,6 +10,65 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+### Added
+
+- **Added** a project logger, used everywhere instead of `console`. One `Logger`
+  class per app, each a singleton exported as `logger`:
+  `apps/api/src/lib/logger.ts` and `apps/web/src/lib/logger.ts`. Standard levels
+  `trace`, `debug`, `info`, `warn`, `error`, `fatal`, plus `silent`. Every line
+  has the same shape, so a log read from the browser and one read from the
+  container are grep-able the same way:
+
+  ```text
+  [2026-09-29T08:26:23.571Z] [INFO] (migrate.ts) (migrate) migration applied migration=0001_settings
+  [2026-09-29T08:25:37.610Z] [INFO] (index.ts) (boot) listening host=0.0.0.0 port=8080 time_zone=UTC
+  ```
+
+  `[datetime] [level] (file/class) (method/function) message key=value key1=value2`.
+  The level comes from `LOG_LEVEL` in the API and `VITE_LOG_LEVEL` in the browser
+  — Vite only exposes `VITE_`-prefixed variables, so the unprefixed name would be
+  `undefined` in a bundle. The API's level is validated in `configSchema`, so a
+  typo is refused at boot by name; the logger itself degrades to `info` rather
+  than throwing, because it is what reports the boot failure. The channel is the
+  console, exposed as a `LogChannel` interface so the destination is decided once
+  and a test can read what was logged: `warn` and `error` reach `console.warn`
+  and `console.error` (stderr), everything else stdout. The API reads `nowMs()`
+  for its timestamp (AGENTS.md ground rule 4), so a test can freeze the clock and
+  assert on an exact line. Rendering never throws: circular references become
+  `[Circular]`, an unserialisable value `[Unserializable]`, and a channel that
+  throws is swallowed, because a logger that takes down its caller is worse than
+  no log.
+
+### Changed
+
+- **Changed** application logging no longer uses `console`. Every `console.*` call
+  in the API — the boot line, the four CLI commands and three app-level messages
+  in `server.ts` — now goes through the logger, so one `LOG_LEVEL` controls the
+  whole process and every line has the same format. `apps/api/src/main.ts:9` is
+  the reason the logger reads the environment itself rather than taking its level
+  from `AppConfig`: it reports a `ConfigError` through the logger, which a
+  logger depending on a successfully parsed config could not do.
+- **Changed** the test suite is quiet by default: `vitest.config.ts` sets
+  `LOG_LEVEL=silent` unless the environment already sets it, so a module-level
+  line repeated across every test cannot bury a real failure. Run
+  `LOG_LEVEL=debug pnpm test` to see everything. `migrate.int.test.ts` pins
+  `LOG_LEVEL=info` for the CLI it spawns, because it asserts on the migrator's
+  real output.
+- **Changed** migrations no longer run through Umzug. Knex runs them and owns the
+  ledger: `knex_migrations` replaces the hand-rolled `schema_migrations` table,
+  migration `0001_schema_migrations` is gone, and the data-model migrations
+  renumber as `0001_settings.js`, `0002_data_model.js`, `0003_invariants.js`. Each
+  file embeds the reviewed schema SQL (byte-identical to the hand-written `.sql` it
+  replaced) and applies it in one native SQLite transaction. The pre-migration
+  backup, the restore-and-abort that names the file, and the contiguity check still
+  live in `migrate.ts` (ADR 0012). The immutability checksum is dropped by owner
+  decision: `knex_migrations` never carried a checksum, and every migration is
+  `IF NOT EXISTS`, so a repeat run is a safe no-op. Upgrade of a live volume is a
+  no-op re-run that fills the new ledger; verified against a copy of the real 0.1.0
+  data directory (data and settings preserved).
+- **Changed** `knex` is now the query-builder dependency of `apps/api`; `umzug` was
+  removed. `drizzle-orm` had already been dropped (see 0.1.0 record).
+
 
 ## [0.1.0] — Foundation & runtime
 

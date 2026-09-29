@@ -79,9 +79,9 @@ COPY --from=build --chown=pdm:pdm /repo/apps/web/dist ./web
 # symlink into a layer that is not copied would resolve to nothing at runtime.
 COPY --from=build --chown=pdm:pdm /prod/api/node_modules ./node_modules
 
-# The migration `.sql` files sit next to the compiled runner, which is where it
+# The migration files sit next to the compiled runner, which is where it
 # looks for them. Shipping them as plain files is what keeps a migration an
-# auditable `.sql` rather than something generated (NFR-MAINT-02).
+# auditable unit of DDL rather than something generated (NFR-MAINT-02).
 COPY --from=build --chown=pdm:pdm /repo/apps/api/dist/db/migrations ./api/db/migrations
 
 # The mounts. Created here with the right ownership so a named volume inherits

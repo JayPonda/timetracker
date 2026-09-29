@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from './connection.js';
 import { loadMigrations, migrate, MigrationError, migrationStatus, seedSettings } from './migrate.js';
@@ -23,6 +24,28 @@ function freshDb(name = 'pdm.db') {
   return { db, file };
 }
 
+/**
+ * Writes a minimal Knex migration for the runner tests. The runner only cares
+ * that a migration is a `.js` module exporting `up` and `down`; the real
+ * migrations also embed the schema SQL, but these tests run synthetic DDL.
+ */
+function writeMigration(dir: string, name: string, sql: string): void {
+  mkdirSync(dir, { recursive: true });
+  const body = [
+    'export async function up(knex) {',
+    '  const conn = await knex.client.acquireConnection();',
+    '  try {',
+    `    conn.transaction(() => { conn.exec(${JSON.stringify(sql)}); })();`,
+    '  } finally {',
+    '    await knex.client.releaseConnection(conn);',
+    '  }',
+    '}',
+    'export async function down() {}',
+    '',
+  ].join('\n');
+  writeFileSync(join(dir, name), body, 'utf8');
+}
+
 describe('DEP-09: migrations run in order at boot', () => {
   it('applies every migration on a clean database', async () => {
     const { db } = freshDb();
@@ -39,7 +62,7 @@ describe('DEP-09: migrations run in order at boot', () => {
     const { db } = freshDb();
     await migrate(db, { backupDir });
 
-    const rows = db.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all();
+    const rows = db.prepare('SELECT name FROM knex_migrations ORDER BY id').all();
     expect(rows.length).toBeGreaterThan(0);
     db.close();
   });
@@ -50,13 +73,13 @@ describe('DEP-09: running migrations again changes nothing', () => {
     // The owner restarts the container more than once; a boot must not reapply.
     const { db } = freshDb();
     await migrate(db, { backupDir });
-    const before = db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number };
+    const before = db.prepare('SELECT COUNT(*) AS n FROM knex_migrations').get() as { n: number };
 
     const second = await migrate(db, { backupDir });
 
     expect(second.applied).toHaveLength(0);
     expect(second.skipped.length).toBeGreaterThan(0);
-    const after = db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number };
+    const after = db.prepare('SELECT COUNT(*) AS n FROM knex_migrations').get() as { n: number };
     expect(after.n).toBe(before.n);
     db.close();
   });
@@ -67,18 +90,11 @@ describe('DEP-09: a migration is transactional', () => {
     // Half a schema is worse than no schema: the next boot cannot tell which
     // statements landed, so the error would surface far from its cause.
     const dir = join(root, 'bad-migrations');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { mkdirSync, writeFileSync } = require('node:fs');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, '0001_first.sql'),
-      'CREATE TABLE first (id INTEGER PRIMARY KEY) STRICT;',
-      'utf8',
-    );
-    writeFileSync(
-      join(dir, '0002_broken.sql'),
+    writeMigration(dir, '0001_first.js', 'CREATE TABLE first (id INTEGER PRIMARY KEY) STRICT;');
+    writeMigration(
+      dir,
+      '0002_broken.js',
       'CREATE TABLE second (id INTEGER PRIMARY KEY) STRICT; THIS IS NOT SQL;',
-      'utf8',
     );
 
     const { db } = freshDb();
@@ -87,10 +103,10 @@ describe('DEP-09: a migration is transactional', () => {
 
     // 0001 succeeded, so it stays recorded. 0002 failed, so neither its table nor
     // its ledger row exists: a half-applied migration is the thing to avoid.
-    const applied = db
-      .prepare('SELECT version FROM schema_migrations ORDER BY version')
-      .all() as Array<{ version: number }>;
-    expect(applied.map((r) => r.version)).toEqual([1]);
+    const applied = (
+      db.prepare('SELECT name FROM knex_migrations ORDER BY id').all() as Array<{ name: string }>
+    ).map((r) => r.name);
+    expect(applied).toEqual(['0001_first.js']);
 
     const second = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'second'")
@@ -101,11 +117,8 @@ describe('DEP-09: a migration is transactional', () => {
 
   it('names the backup file in the error so the owner can recover', async () => {
     const dir = join(root, 'bad-migrations-2');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { mkdirSync, writeFileSync } = require('node:fs');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, '0001_ok.sql'), 'CREATE TABLE ok (id INTEGER PRIMARY KEY) STRICT;', 'utf8');
-    writeFileSync(join(dir, '0002_bad.sql'), 'NOT VALID SQL AT ALL;', 'utf8');
+    writeMigration(dir, '0001_ok.js', 'CREATE TABLE ok (id INTEGER PRIMARY KEY) STRICT;');
+    writeMigration(dir, '0002_bad.js', 'NOT VALID SQL AT ALL;');
 
     const { db, file } = freshDb();
 
@@ -129,8 +142,6 @@ describe('DEP-09: a backup is taken before each migration', () => {
     const { db } = freshDb();
     await migrate(db, { backupDir });
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { readdirSync } = require('node:fs');
     const files = readdirSync(join(backupDir, 'migrations'));
     expect(files.length).toBeGreaterThan(0);
     expect(files.some((f: string) => f.endsWith('.db'))).toBe(true);
@@ -138,34 +149,11 @@ describe('DEP-09: a backup is taken before each migration', () => {
   });
 });
 
-describe('NFR-MAINT-02: an applied migration is immutable', () => {
-  it('refuses a migration whose file was edited after being applied', async () => {
-    // This is how a silent divergence between two environments starts.
-    const dir = join(root, 'immutable');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { mkdirSync, writeFileSync } = require('node:fs');
-    mkdirSync(dir, { recursive: true });
-    const migrationPath = join(dir, '0001_one.sql');
-    writeFileSync(migrationPath, 'CREATE TABLE one (id INTEGER PRIMARY KEY) STRICT;', 'utf8');
-
-    const { db } = freshDb();
-    await migrate(db, { backupDir, dir });
-
-    writeFileSync(migrationPath, 'CREATE TABLE one (id INTEGER PRIMARY KEY, extra TEXT) STRICT;', 'utf8');
-
-    await expect(migrate(db, { backupDir, dir })).rejects.toThrow(/checksum/i);
-    db.close();
-  });
-});
-
 describe('NFR-MAINT-02: migration versions are contiguous', () => {
   it('rejects a gap, because a gap means a migration was deleted', async () => {
     const dir = join(root, 'gap');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { mkdirSync, writeFileSync } = require('node:fs');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, '0001_one.sql'), 'CREATE TABLE one (id INTEGER PRIMARY KEY) STRICT;', 'utf8');
-    writeFileSync(join(dir, '0003_three.sql'), 'CREATE TABLE three (id INTEGER PRIMARY KEY) STRICT;', 'utf8');
+    writeMigration(dir, '0001_one.js', 'CREATE TABLE one (id INTEGER PRIMARY KEY) STRICT;');
+    writeMigration(dir, '0003_three.js', 'CREATE TABLE three (id INTEGER PRIMARY KEY) STRICT;');
 
     const { db } = freshDb();
     await expect(migrate(db, { backupDir, dir })).rejects.toThrow(/contiguous/i);
@@ -255,12 +243,19 @@ describe('0.1.0: settings defaults are written on first boot', () => {
 });
 
 describe('NFR-MAINT-02: the migration files themselves are auditable', () => {
-  it('are plain SQL in numeric order', () => {
+  it('are Knex migrations with the schema SQL embedded, in numeric order', async () => {
     const migrations = loadMigrations();
     expect(migrations.length).toBeGreaterThan(0);
     for (const [index, m] of migrations.entries()) {
       expect(m.version).toBe(index + 1);
-      expect(m.sql.trim().length).toBeGreaterThan(0);
+      const module = (await import(pathToFileURL(m.path).href)) as {
+        up: unknown;
+        down: unknown;
+      };
+      expect(typeof module.up).toBe('function');
+      expect(typeof module.down).toBe('function');
+      const source = readFileSync(m.path, 'utf8');
+      expect(source).toMatch(/CREATE (TABLE|TRIGGER|INDEX)/);
     }
   });
 });

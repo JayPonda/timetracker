@@ -6,6 +6,7 @@ import type { Database as Db } from 'better-sqlite3';
 import { ERROR_CODES, nowMs, type ErrorEnvelope, type HealthResponse } from '@pdm/shared';
 import type { AppConfig } from './config/index.js';
 import { migrationStatus } from './db/migrate.js';
+import { logger } from './lib/logger.js';
 import { VERSION } from './version.js';
 
 export interface CreateServerOptions {
@@ -124,7 +125,7 @@ function registerErrorEnvelope(app: FastifyInstance, webDir: string | undefined)
 
     if (status >= 500) {
       // The full error goes to the log, the message does not go to the client.
-      app.log.error({ err: error, req: req.url }, 'request failed');
+      logger.error('server.ts', 'errorHandler', 'request failed', { err: error, url: req.url });
     }
 
     const body: ErrorEnvelope = {
@@ -184,7 +185,7 @@ function registerHealth(
       return reply.status(200).send(body);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      app.log.error({ err: cause }, 'health check failed: database unreachable');
+      logger.error('server.ts', 'health', 'health check failed: database unreachable', { err: cause });
 
       const body: HealthResponse = {
         status: 'error',
@@ -214,7 +215,7 @@ function registerStatic(app: FastifyInstance, config: AppConfig): void {
 
   if (!webDir || !existsSync(join(webDir, 'index.html'))) {
     // Not an error. The API is useful on its own, and in tests there is no build.
-    app.log.info(`no frontend build at ${webDir}; serving the API only`);
+    logger.info('server.ts', 'registerStatic', 'no frontend build; serving the API only', { web_dir: webDir });
     return;
   }
 

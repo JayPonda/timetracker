@@ -68,7 +68,8 @@ Add new sections below this line, one per release.
 
 | Item | Why it matters | Priority | Target | Status |
 | --- | --- | --- | --- | --- |
-| `drizzle-orm` is declared, unused, and has no ADR | `AGENTS.md` rule 10 requires an ADR for a runtime dependency. 0.1.0 shipped with this as a recorded exception. The first query that would use it is the project list in 0.2.0, so 0.2.0 is the release where it is either used with an ADR or dropped | Should | 0.2.0 | **needs owner decision** |
+| `drizzle-orm` is declared, unused, and has no ADR | Dropped 2026-09-29 by owner decision in favour of hand-written SQL over `better-sqlite3`; ADR 0009 amended, `AGENTS.md` and `docs/ROADMAP.md` corrected. Accepted cost: no compile-time column checking. Closes the only open DoD box from 0.1.0 | — | done | closed |
+| `autoprefixer` declared in `apps/web` but referenced by nothing | Tailwind 4's `@tailwindcss/postcss` bundles it, so the declaration was dead weight | — | done | closed |
 | `/health` version was hardcoded, not read | Fixed after the 0.1.0 tag in `a599758`; recorded here so the reason survives | — | done | closed |
 | `uptime_s` was always 0 | Same commit; it read the clock inside the request handler | — | done | closed |
 | React 18 / Tailwind 3 vs the roadmap's React 19 / Tailwind 4 | Resolved by upgrading the code, ADR 0011 | — | done | closed |

@@ -216,12 +216,19 @@ wrapper over **Umzug 3.8.3**. The SQL files are unchanged and still hand-written
 runner is no longer ours. Recorded as `D-22` and
 [ADR 0009](docs/adr/0009-migration-runner-umzug.md).
 
-**Umzug, not `drizzle-kit`, and the reason matters if this is revisited.** `drizzle-orm` is
-already the query layer, so `drizzle-kit` was the obvious candidate — but it makes the
-*author* of the migration a schema object, which is exactly the auditability trade
-`NFR-MAINT-02` refuses. Umzug only decides who *applies* a migration. If 0.2.0's 15 tables
-make hand-writing SQL painful, the right answer is a generated-SQL review step, not an ORM
-replacing the ledger.
+**Umzug, not `drizzle-kit`, and the reason matters if this is revisited.** `drizzle-kit` was
+the obvious candidate — but it makes the *author* of the migration a schema object, which is
+exactly the auditability trade `NFR-MAINT-02` refuses. Umzug only decides who *applies* a
+migration. If 0.2.0's 15 tables make hand-writing SQL painful, the right answer is a
+generated-SQL review step, not an ORM replacing the ledger.
+
+**`drizzle-orm` was declared for 0.1.0 and never used, then dropped on 2026-09-29.** It
+sat in `apps/api/package.json` with zero imports while `AGENTS.md`, `docs/ROADMAP.md` and
+ADR 0009 all described it as the query layer. The owner dropped it in favour of hand-written
+SQL over `better-sqlite3`, and the docs were corrected to match. Accepted cost: no
+compile-time column checking, so a renamed column is a runtime error caught by tests rather
+than by `tsc`. This closed the `AGENTS.md` rule 10 exception that 0.1.0 shipped with — the
+first release to record an accepted deviation from its own DoD.
 
 **Two things that were not obvious and cost time.**
 
@@ -244,6 +251,51 @@ That is the project's preferred failure mode, and it is cheaper than the code it
 and writes `pre-NNNN` backups; a deliberately broken migration rolls back with no partial
 table, names its backup, and restores; the Docker image builds and reaches `healthy` with
 2 migrations applied, and a container restart applies nothing new.
+
+### 2026-09-29 — Session 6: Full Knex (runner + query layer)
+
+**The owner's instruction:** Knex everywhere. The 0.2.0 repository layer already needed a
+query builder; the owner chose **Full Knex** — Knex runs the migrations too, and
+`knex_migrations` is the only ledger. Umzug was removed from `apps/api/package.json`
+(pnpm dropped 24 transitive packages). Recorded as `D-24` and
+[ADR 0012](docs/adr/0012-migration-runner-knex.md), which supersedes ADR 0009. This also
+moves the data-access layer from the "hand-written SQL over `better-sqlite3`" that the
+drizzle-drop entry above landed on, to Knex — the drizzle-drop still stands, Knex is just
+a thin query builder over the same driver.
+
+**What changed.** The `.sql` migration files (including `0001_schema_migrations.sql`) are
+gone. Migrations are now `NNNN_name.js` ESM modules embedding the reviewed DDL
+byte-identical to the source SQL (verified with a per-file diff at generation time),
+renumbered to `0001_settings`, `0002_data_model`, `0003_invariants`. Each runs its DDL in
+one native better-sqlite3 transaction (`disableTransactions: true` so Knex does not wrap
+it), meaning a failed migration leaves no partial schema *and* no ledger row. `migrate.ts`
+keeps the pre-migration `VACUUM INTO` backup, restore-and-abort naming the file, and the
+contiguity check.
+
+**The checksum dropped, and why that is safe here.** `knex_migrations` never carried a
+checksum, so the immutability guarantee was ours to maintain against a ledger that could
+not enforce it. Every migration is `IF NOT EXISTS`, so an edited-and-re-run migration is a
+safe no-op, and the contiguity check still catches a deleted one. The owner accepted this
+explicitly; the trade is written into ADR 0012 so it is never re-made silently.
+
+**Knex quirks that cost time.**
+
+- `migrationSource.getMigrations` must return a **Promise** — Knex's `MigrationSource`
+  type expects `Promise<unknown[]>`, even though `Promise.all` wraps it at runtime. Our
+  first version was sync and `tsc` complained.
+- Knex only `warn`s `migration file "X" failed` and **rethrows the raw SqliteError**, so
+  the runner has to track the failing file via its own `state.active` to name the backup.
+- The ledger stores the **filename including `.js`** (`0001_settings.js`), not just the
+  slug. Keep `FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.js$/` in sync with the naming.
+- After build, the Docker copy step must **mirror** (`rmSync(to)` before `cpSync`), not
+  merge — stale dist files were elsewhere being copied, and since migrations are `.js` now,
+  any leftover `.sql` in `dist` would confuse a future glob.
+
+**Verified, not assumed:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (13 files, 168
+tests) and `pnpm --filter api build` all pass; the built CLI applies `0001`–`0003` to a
+copy of the **real 0.1.0 volume** (all rows and 7 settings preserved), records them in
+`knex_migrations`, and is idempotent on a second run ("up to date, 3 migration(s)
+already applied", exit 0).
 
 ### 2026-09-28 — Session 5: the `pdm-migrate` container
 

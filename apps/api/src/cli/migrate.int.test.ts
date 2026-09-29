@@ -41,6 +41,11 @@ function env() {
     PDM_DATA_DIR: dataDir,
     PDM_BACKUP_DIR: backupDir,
     TZ: 'UTC',
+    // Pinned after the spread, so the assertions below read the migrator's real
+    // output. The test environment silences the logger to keep the suite quiet,
+    // and a child process inherits that; without this the migrator would report
+    // nothing and every assertion here would be vacuous.
+    LOG_LEVEL: 'info',
   };
 }
 
@@ -75,8 +80,9 @@ describe('DEP-09: the migrator container succeeds only on a clean migration', ()
     const result = runMigrate(e);
 
     expect(result.code, result.output).toBe(0);
-    expect(result.output).toContain('0001_schema_migrations');
-    expect(result.output).toContain('0002_settings');
+    expect(result.output).toContain('0001_settings');
+    expect(result.output).toContain('0002_data_model');
+    expect(result.output).toContain('0003_invariants');
   }, 120000);
 
   it('exits 0 on a second run, because it is idempotent', () => {

@@ -1,4 +1,5 @@
 import { boot } from './index.js';
+import { logger } from './lib/logger.js';
 
 /**
  * The process entry point.
@@ -9,7 +10,6 @@ import { boot } from './index.js';
  * instead of a quiet failure (DEP-09, DEP-05).
  */
 boot().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`[pdm] boot failed: ${message}`);
+  logger.error('main.ts', 'boot', 'boot failed', { err: error });
   process.exitCode = 1;
 });
