@@ -5,8 +5,8 @@ spec, not against a memory of the last conversation.
 
 | Release | Name | Status | SRS phase | Spec |
 | --- | --- | --- | --- | --- |
-| 0.1.0 | Foundation & runtime | next | §3 | [v0.1.0.md](v0.1.0.md) |
-| 0.2.0 | Data model & core CRUD | planned | §9 | — |
+| 0.1.0 | Foundation & runtime | **shipped** (v0.1.0) | §3 | [v0.1.0.md](v0.1.0.md) |
+| 0.2.0 | Data model & core CRUD | next | §9 | — |
 | 0.3.0 | Time tracking | planned | §4 | — |
 | 0.4.0 | Today, Day log & where the time went | planned | §8.3, §8.4 | — |
 | 0.5.0 | Quality gate | planned | §6 | — |
