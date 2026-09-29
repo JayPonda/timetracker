@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { NavLink } from 'react-router-dom';
 import { NAV_ITEMS } from '../nav';
 

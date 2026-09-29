@@ -15,6 +15,7 @@ supersedes the old one and say so here.
 | [0007](0007-backup-export-import.md) | Backups use the online API; import merges on a stable `uid` | Accepted | 0.9.0 |
 | [0009](0009-migration-runner-umzug.md) | Migrations run through Umzug over plain SQL; the runner is a thin wrapper | Accepted | 0.1.0 |
 | [0010](0010-migration-container.md) | A one-shot `pdm-migrate` container applies migrations; the server refuses to run without them | Accepted | 0.1.0 |
+| [0011](0011-react19-tailwind4.md) | The frontend runs React 19 and Tailwind 4, so the roadmap's stated stack is real | Accepted | 0.1.0 |
 
 ## Format
 

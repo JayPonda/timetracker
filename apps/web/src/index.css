@@ -1,12 +1,15 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
 /**
- * `darkMode: 'media'` in the Tailwind config is what satisfies UI-09: the
- * themes follow the OS preference with no stored choice and no flash of the
- * wrong theme, because the browser applies `prefers-color-scheme` before
- * first paint.
+ * Tailwind v4 configures itself here rather than in a JavaScript file, so the
+ * `@tailwind base/components/utilities` directives and `tailwind.config.js` are
+ * both gone (`docs/adr/0011`).
+ *
+ * `darkMode: 'media'` was the v3 setting that satisfied UI-09 and the themes
+ * follow the OS preference with no stored choice and no flash of the wrong
+ * theme, because the browser applies `prefers-color-scheme` before first paint.
+ * In v4 `media` is the default strategy, so the equivalent is to add nothing —
+ * which is the right answer only because this app never used a stored class.
  *
  * The `color-scheme` meta tag in index.html tells the browser to style native
  * controls and scrollbars to match.

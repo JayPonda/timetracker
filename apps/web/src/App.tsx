@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { NAV_ITEMS } from './nav';
 import { Sidebar } from './components/Sidebar';
 import { HealthSummary } from './components/HealthSummary';
