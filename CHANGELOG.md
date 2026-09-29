@@ -10,6 +10,11 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+
+## [0.1.0] — Foundation & runtime
+
+Released 2026-09-29. See [`docs/RELEASES/v0.1.0.md`](docs/RELEASES/v0.1.0.md).
+
 ### Changed
 
 - **Changed** the database and its backups live in **Docker-managed volumes**
@@ -130,7 +135,3 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 Requirement IDs from the SRS are quoted in entries where a change is traceable to one, for
 example `Fixed the closure gate refusing a valid payload when a criterion was archived
 (FR-GATE-02)`.
-
-## [0.1.0] — Foundation & runtime
-
-Planned. Not started. See [`docs/RELEASES/v0.1.0.md`](docs/RELEASES/v0.1.0.md).
