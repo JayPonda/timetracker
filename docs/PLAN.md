@@ -17,11 +17,11 @@ All data stays on the laptop.
 
 | Field | Value |
 | --- | --- |
-| Current release | **0.1.0 — Foundation & runtime** |
-| Status | **Not started.** Plan written and approved; no application code exists yet |
-| Completed releases | none |
-| Spec for the current release | [`RELEASES/v0.1.0.md`](RELEASES/v0.1.0.md) |
-| Next release after that | 0.2.0 — Data model & core CRUD |
+| Current release | **0.2.0 — Data model & core CRUD** |
+| Status | **Not started.** Spec not yet written; 0.2.0 does not begin until its own spec is approved |
+| Completed releases | [`0.1.0`](RELEASES/v0.1.0.md) — Foundation & runtime, tagged `v0.1.0` 2026-09-29 |
+| Spec for the current release | **not yet written** — see [`RELEASES/`](RELEASES/) |
+| Next release after that | 0.3.0 — Time tracking & timer |
 | Blocking questions | `OQ-1`…`OQ-8` in [`ROADMAP.md` §9](ROADMAP.md#9-open-questions-for-the-owner) — all currently using the stated default, so nothing is blocked |
 
 ## The twelve releases, in order
