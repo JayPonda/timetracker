@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import type { HealthResponse } from '@pdm/shared';
 import { formatClock, isValidTimeZone } from '../lib/datetime';
 
