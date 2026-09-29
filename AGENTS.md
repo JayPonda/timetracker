@@ -78,16 +78,26 @@ before 1.0.0.
 
 ---
 
-## Part 2 — The eleven ground rules
+## Part 2 — The twelve ground rules
 
 These are not style preferences. Each one exists because breaking it makes a specific
 requirement untestable. Breaking one is a defect.
 
 ### 1. One write path
 
-Business-rule mutations happen in `apps/api/src/services/**`. Route handlers do HTTP
-plumbing: parse, validate, authorise, call a service, shape a response. **No SQL and no
-business rules in a route.**
+A write travels **route → service → repository → Knex**, and only in that direction.
+
+- A **route** does HTTP plumbing: parse, validate, authorise, call a service, shape a
+  response. No SQL and no business rules.
+- A **service** holds the business rule and owns the transaction. It is the only thing that
+  decides what a mutation means.
+- A **repository** holds the query. Knex, and nothing else. No business rules, and no
+  knowledge of *why* the query runs.
+
+The service layer is the only entry point to a write. A repository is never called from a
+route, and never decides anything. **The layer was added on 2026-09-29 (`D-25`)**: `knex.ts`
+and ADR 0012 both described a three-layer split that this file's layout did not contain, and
+rather than delete one of them the owner confirmed three layers and the layout was corrected.
 
 This one rule is what makes three of the project's hardest requirements provable:
 
@@ -179,6 +189,54 @@ describe('FR-GATE-05: an unmet criterion requires a lagging reason', () => { ...
 The test name is documentation that cannot go stale, because it is checked against the SRS
 in review.
 
+### 12. One logger, used everywhere. No `console`
+
+Every line of application output goes through the `Logger` class, and every call site
+passes its own file and function name:
+
+```ts
+logger.info('timer.service.ts', 'start', 'timer started', { task_id: 42, todo_id: 7 });
+```
+
+```text
+[2026-09-29T08:26:23.571Z] [INFO] (timer.service.ts) (start) timer started task_id=42 todo_id=7
+```
+
+`[datetime] [level] (file/class) (method/function) message key=value key1=value2`
+
+Four things follow from this, and breaking any of them costs something real:
+
+1. **The whole application is one `LOG_LEVEL`.** Setting it reveals or silences
+   everything at once. A codebase with ad-hoc `console` calls cannot answer "what
+   was this process doing", because a third of its output went somewhere nobody
+   looked.
+2. **Every level is used, not just `error`.** `trace`, `debug` and `info` are how
+   the *good* path is recorded, which is the point: a log that captures only
+   failures cannot answer "what happened at 14:03, and which branch did it take".
+   `info` is where a milestone belongs — boot, listen, backup written, timer
+   started.
+3. **The format never varies.** One shape means `grep '\[ERROR\]'`,
+   `grep 'task_id=42'` and a log line from the browser and one from the container
+   are read the same way.
+4. **Rendering cannot throw.** A circular reference prints `[Circular]`, an
+   unserialisable value `[Unserializable]`, and a channel that throws is
+   swallowed. A logger that takes down its caller is worse than no log.
+
+The API logger reads `nowMs()` for its timestamp, like everything else (ground
+rule 4), so a test can freeze the clock and assert on an exact line.
+
+**The level comes from the environment, but not from `AppConfig`.** The API reads
+`LOG_LEVEL`; the browser reads `VITE_LOG_LEVEL`, because Vite only exposes
+`VITE_`-prefixed variables to a bundle and an unprefixed name would be
+`undefined` in the browser *by construction* — it would look configured and log
+at the default. A logger that took its level from a successfully parsed config
+could not log the failure that parsing produced, so it reads the variable itself
+and `configSchema` validates the same one to catch a typo by name at boot.
+
+See `apps/api/src/lib/logger.ts` and `apps/web/src/lib/logger.ts`. Two classes,
+not one shared one: they run in different worlds, and what they deliberately share
+is the level names and the line format.
+
 ---
 
 ## Part 3 — Setup from zero
@@ -252,7 +310,7 @@ pnpm typecheck                # tsc --noEmit across workspaces
 # Tests
 pnpm test                     # everything, once
 pnpm test:watch               # watch mode
-pnpm test:coverage            # fails below 80% on business modules
+pnpm test:coverage            # fails below 95% on business modules; dot reporter in CI
 pnpm test:int                 # integration: SSE, migrations, backup and restore
 pnpm test:e2e                 # Playwright (from 1.0.0)
 pnpm test -t 'FR-GATE-05'     # one requirement's tests
@@ -316,7 +374,8 @@ apps/api/               Fastify REST API, migrations, scheduler, static serving 
   src/
     config/             Environment parsing. One zod-validated object, read at boot.
     db/                 Connection, pragmas, migration runner, seed scripts
-    services/           Business rules. The ONLY place that writes to the database.
+    repositories/       Queries only. Knex, and no business rules.
+    services/           Business rules. The ONLY place that calls a repository to write.
     routes/             HTTP plumbing only. No SQL. No business rules.
     views/              SQL views for every total
     scheduler/          The reminder loop (from 0.7.0)
@@ -333,7 +392,8 @@ data/                   The live database, on the owner's disk        (git-ignor
 backups/                Automatic and manual backups                 (git-ignored)
 ```
 
-The **service / route split is the most important structural rule in the repository.** If
+The **route / service / repository split is the most important structural rule in the
+repository.** If
 you find yourself wanting to write SQL in a route, the thing you want is a service function.
 
 ---
@@ -353,6 +413,7 @@ you find yourself wanting to write SQL in a route, the thing you want is a servi
 | Monorepo | pnpm workspaces | `onlyBuiltDependencies` required — see Part 3 |
 | Scheduler | In-process loop, 1-second tick | Writes only when it actually fires something |
 | Alerts | SSE + Notifications API + in-app popup + WebAudio sound | No asset files, therefore no CDN |
+| Logging | Own `Logger` class, one per app, console channel | No dependency. One `LOG_LEVEL` for the whole process, one line format (ground rule 12) |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP and stdio | Never touches the database file |
 | Tests | Vitest; Playwright from 1.0.0 | `app.inject()` needs no port |
 
@@ -566,6 +627,8 @@ an ADR, not a matter of style.
 | Enforcing the assistant's limits in the MCP server | `MCP-14` says "whatever the MCP server sends". The limit belongs in the app. |
 | Mounting the database into the MCP container | `MCP-03`. The assistant must go through the API so the rules are enforced once. |
 | A cache, a pre-aggregated rollup, or a read replica | A second source of truth. `DATA-04` exists to prevent exactly this. |
+| `console.log` / `console.error` called directly | Ground rule 12. A line that bypasses the logger has no level, so no single setting can silence it, and no file or function name, so it cannot be traced |
+| A logging dependency (pino, winston, bunyan) | ~50 lines and zero dependencies gets the same thing, on the level names and format this project already documents. The dependency is a permanent supply-chain cost for no user-visible gain — the same argument that removed `umzug` |
 | An `OFFSET` based page | Re-reads skipped rows on every page. Use a cursor. |
 | A charting library | Two or three charts, one large dependency, and the bundle is paid on every page load. |
 | Pagination or caching added "just in case" | `R6` is scope. Add it when a measurement in `docs/PERF.md` says so. |
@@ -607,3 +670,4 @@ would create two places to keep in sync — the exact problem `DATA-04` exists t
 | Date | Change |
 | --- | --- |
 | 2026-09-28 | Rewritten in full, from the beginning, as the project constitution. Standardised on pnpm (was inconsistently documented as npm in ADR 0001). |
+| 2026-09-29 | Added ground rule 12, the one logger, and recorded why the browser reads `VITE_LOG_LEVEL` while the API reads `LOG_LEVEL`. Triggered by adding the logger and finding that an unprefixed name in a Vite bundle is `undefined` by construction — it looks configured and logs at the default. |

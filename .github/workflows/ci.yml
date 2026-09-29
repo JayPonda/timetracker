@@ -2,11 +2,11 @@
 #
 # Two jobs, on purpose.
 #
-# `gates` is the release gate: the four commands from criterion 14, in a clean
-# checkout, on the default branch. Criterion 14 says "from a clean install", so
-# this job installs with `--frozen-lockfile` and builds nothing by hand — if a
-# gate passes here it passes on a fresh clone, which is the failure mode that
-# bit Session 6 (see MEMORY.md).
+# `gates` is the release gate: the five commands from criterion 14 plus the
+# coverage floor, in a clean checkout, on the default branch. Criterion 14 says
+# "from a clean install", so this job installs with `--frozen-lockfile` and
+# builds nothing by hand — if a gate passes here it passes on a fresh clone,
+# which is the failure mode that bit Session 6 (see MEMORY.md).
 #
 # `image` builds the Docker image. It is separate because it is slow and fails
 # for different reasons: a native `better-sqlite3` build breaking against a new
@@ -33,9 +33,9 @@ permissions:
 
 jobs:
   gates:
-    name: lint, types, tests, build
+    name: lint, types, tests, coverage, build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -62,6 +62,22 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # Coverage is its own step, after `Test`, not a flag on it.
+      #
+      # Two reasons. First, a combined step means a coverage failure reports as
+      # "tests failed", which sends the next person to the wrong file. Second,
+      # `pnpm test:coverage` re-runs the suite with the v8 provider loaded, so
+      # folding it into the first run would double the time for no benefit: the
+      # numbers have to come from an instrumented run either way.
+      #
+      # The 95% floor on `services/**` and `packages/shared` lives in
+      # `vitest.config.ts` as a `thresholds` block, so this step fails on the
+      # number rather than on anybody remembering to read it. `CI` is already set
+      # by GitHub Actions, which is what switches the reporter to `dot` — the log
+      # then expands only the failures instead of printing a line per test file.
+      - name: Coverage (95% floor on services and shared)
+        run: pnpm test:coverage
 
       - name: Integration test
         run: pnpm test:int

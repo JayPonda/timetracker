@@ -11,8 +11,10 @@
 ## Context
 
 0.2.0's repository layer needs a query builder — the agreed shape is
-services → repository → Knex (AGENTS.md Part 5). Knex is already in
-`apps/api` for that. The migrations were still running through Umzug, which meant
+services → repository → Knex (AGENTS.md Part 5, as corrected on 2026-09-29 by
+`D-25`; this citation pointed at a three-layer split that the layout did not yet
+contain when the ADR was written). Knex is already in `apps/api` for that. The
+migrations were still running through Umzug, which meant
 the project carried **two** libraries with **two** ideas of what a migration is,
 and every migration written this release — fifteen tables, constraints, views and
 triggers — would live inside the runner's ledger model forever.

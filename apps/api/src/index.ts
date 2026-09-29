@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3';
 import { backupDatabase } from './db/backup.js';
 import { databasePath, openDb } from './db/connection.js';
+import { createKnex } from './db/knex.js';
 import { migrationStatus, seedSettings, type MigrationStatus } from './db/migrate.js';
 import { loadConfig } from './config/index.js';
 import { logger } from './lib/logger.js';
@@ -67,11 +68,13 @@ export async function boot(): Promise<{ close: () => Promise<void> }> {
 
   seedSettings(db);
 
-  const server = createServer({ config, db });
+  const knex = createKnex({ file: dbFile });
+  const server = createServer({ config, db, knex });
 
   try {
     await server.listen({ host: config.PDM_BIND_HOST, port: config.PDM_INTERNAL_PORT });
   } catch (cause) {
+    await knex.destroy();
     db.close();
     throw cause;
   }
@@ -87,6 +90,10 @@ export async function boot(): Promise<{ close: () => Promise<void> }> {
   return {
     close: async () => {
       await server.close();
+      // Knex first: it holds pooled connections to the same file, and closing
+      // the file underneath a live pool is the kind of ordering bug that shows
+      // up as an error on shutdown and nowhere else.
+      await knex.destroy();
       db.close();
     },
   };

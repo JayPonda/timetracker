@@ -56,6 +56,123 @@ on it; a stale snapshot here is worse than none.
 
 ## Gotchas discovered
 
+### Vite only exposes `VITE_`-prefixed variables to the browser bundle
+
+Discovered 2026-09-29, while building the project logger. The obvious move — read `LOG_LEVEL`
+in both apps, because it is the name the project already documents — is a trap in the
+frontend. Vite substitutes only `VITE_`-prefixed variables at build time, so an unprefixed
+name is `undefined` in a bundle **by construction**. It does not error; it looks configured
+and quietly logs at the default, which is the worst way for a log level to fail.
+
+The API reads `LOG_LEVEL`; the browser reads `VITE_LOG_LEVEL`. Same class, same line format,
+different variable name, for a reason that will not be obvious to the next person reading it.
+
+### An env var documented in `.env.example` still has to be passed into the container
+
+Same session. `LOG_LEVEL` was documented and read correctly in the code, and did nothing in
+Docker, because `docker-compose.yml` enumerates the environment explicitly and the variable
+was not in either service's list. A variable that is not listed is not inherited, whatever
+`.env` says.
+
+**This is the class of bug that survives review and passes every test**, because every test
+runs outside the container. After changing any variable in `.env.example`, check it against
+both `environment:` blocks in `docker-compose.yml`, and verify with
+`docker compose config | grep VAR`. Done for `LOG_LEVEL`; the other variables were already
+listed.
+
+### Prettier disagrees with the repository as committed, and that is not a gate
+
+`pnpm format:check` fails on **53 files on a clean `HEAD`** — 44 of them files I have never
+touched, including `.prettierrc.json`, `tsconfig.base.json` and `VERSIONING.md`. Verified by
+extracting the committed blobs to a temp directory and running `prettier --check` on them: they
+fail there too, so the state predates this session.
+
+**Consequence: do not run `pnpm format` at the root as a "fix".** It would reformat 53 files and
+bury the dozen that are actually mine in a diff nobody can review, which is exactly the wrong
+outcome for a change that is supposed to be about a release's foundation. I formatted only the
+files I created — `lib/`, `middleware/`, `routes/`, `services/`, `server.ts`, `test/helpers.ts`,
+`uid.ts`, `vitest.config.ts` — and verified they are clean.
+
+**This is worth raising with the owner**, because it means one of the two is wrong: either
+`format:check` is not a gate and the DoD should stop implying it is, or the repository was never
+formatted and someone should run it once as a dedicated `chore/format` commit before the history
+grows. Neither is a 0.2.0 blocker. `pnpm lint` is the gate, and it is green.
+
+### `pnpm test:coverage` was never wired up, and the version matters
+
+`@vitest/coverage-v8` was not in any `package.json`, so the script failed with
+`Cannot find dependency '@vitest/coverage-v8'`. It was documented in `AGENTS.md` and
+`docs/TESTING.md` as "fails below N% on business modules", which reads as a passing gate and
+is not one.
+
+The fix is `pnpm add -D -w @vitest/coverage-v8@<same major as vitest>`. **The version suffix is
+not optional.** Installing the provider unpinned pulled v5 against this repo's Vitest 2.1.9 and
+failed at startup with a bewildering `vitest/node does not provide an export named
+'BaseCoverageProvider'`, which reads like a Vitest bug rather than a major-version mismatch. The
+provider and the runner must be the same major.
+
+It matters because the 0.2.0 Definition of Done requires coverage on
+`apps/api/src/services/**` and `packages/shared`, and that box could not honestly be checked
+until the provider was installed.
+
+**The second half of that gotcha: installing the provider was still not a gate.** The script ran
+and exited 0 whatever it measured, because `vitest.config.ts` had no `coverage.thresholds`. A
+report nobody fails on is a report nobody reads, and the DoD box would have been checked by
+assertion — the exact thing the box was written to prevent. The `thresholds` block is now in
+the root config, scoped to `services/**` and `packages/shared`, and it was verified by
+temporarily raising the floor to 100% and watching the command exit 1. **Keep doing that check
+after every change to the thresholds — a gate nobody has seen fail is not known to be a gate.**
+
+**The floor is 95%, raised from 80% by owner decision on 2026-09-29, and it earned its keep
+immediately.** Raising it failed the build, because `dateKeyRange` in
+`packages/shared/src/time.ts` had **no test at all** — a public helper that walks a day range
+by repeatedly advancing to the next local midnight, used for day-bucketed reports. It now has
+six tests, including a DST transition (where a naive implementation drifts by an hour per
+year) and the 4000-day bound. This is the argument for the higher number in one line: it found
+untested code in the first minute, and the code was not trivial.
+
+**Why the floor excludes `repositories/**` and `middleware/**`, deliberately.** A repository is
+a query, and the rule it serves is verified by the service test that calls it. Thresholding
+queries separately pushes tests to exist for coverage's sake rather than a rule's sake. They
+are still in the `include` list, so a collapse is visible in the text report without being able
+to fail a build on scaffolding.
+
+**Coverage runs in CI as its own step, after `Test`, not as a flag on it.** Two reasons: a
+combined step reports a coverage failure as "tests failed", which sends the next person to the
+wrong file; and `pnpm test:coverage` re-runs the suite with the v8 provider loaded, so folding
+it in would double the time for no gain. The job's timeout went 15 → 20 minutes to absorb the
+extra run.
+
+### The CI reporter is chosen by an environment variable, not a second script
+
+Owner request 2026-09-29: *"only shows the test which fails … there should be a flag for ci or
+silent."* The root `vitest.config.ts` now reads:
+
+```ts
+reporter: process.env['VITEST_REPORTER'] ?? (process.env['CI'] ? 'dot' : 'default')
+```
+
+`dot` prints a character per test file and expands only the failures, so a red build opens on
+the cause instead of on 300 lines of passing files. `default` stays locally, where the long form
+is what you want when you are watching one suite. `VITEST_REPORTER` overrides both.
+
+**Why an env switch and not a separate `test:ci` script:** a second script is a second thing to
+keep correct. It would drift — someone adds an argument to `pnpm test` and CI keeps running the
+old command, and the gate stops being the gate. Here the tests, the assertions and the exit code
+are identical either way, so the only difference is how much of it gets printed.
+
+Note the spelling: `dot`, not `silent`. Vitest's `silent` reporter prints *nothing at all*,
+including the failures, which is the opposite of what was asked for. `dot` is the one that shows
+only what failed.
+
+### A coverage threshold on *every* file is a threshold the team learns to ignore
+
+`App.tsx`, `main.tsx`, `version.ts` — files whose lines are executed but whose branches are
+either trivial or unreachable — can sit above or below the floor for reasons unrelated to whether
+anyone wrote a test. Then a red build means "the threshold is annoying" rather than "a rule is
+untested", and the one signal is gone. Scoping the floor to the directory that holds the
+business rules keeps it meaningful.
+
 ### pnpm 10+ blocks dependency install scripts by default
 
 `pnpm config get onlyBuiltDependencies` currently returns `undefined` on this machine, which
@@ -135,6 +252,134 @@ technical decision, an ADR. **Do not re-raise these as new questions** — they 
 ---
 
 ## Session log
+
+### 2026-09-29 — Session 8: the API foundation layer, and making coverage a gate
+
+**The owner's instruction:** continue with the 0.2.0 checklist, starting with Phase 0 — the
+foundation every later service writes through.
+
+**What landed.** The three layers now exist and are wired into `createServer`: the typed
+`AppError` and its one code-to-status map, the error envelope moved out of `server.ts` into
+`middleware/error.ts`, the principal seam, the services decorator, the declared-route table,
+and the first repository and service pair (activity log). `packages/shared/src/uid.ts` adds
+the UUIDv7 that nothing previously generated. 320 unit tests, 3 integration tests, all five
+gates green.
+
+**Four decisions worth keeping, because the code looks simpler without them:**
+
+- **A capability declaration with an empty list is refused, not allowed.** The guard was
+  `required.every(...)`, and `[].every()` is `true`, so a route declared with `capabilities: []`
+  was open to everyone. The check is `required.length === 0 || missing.length > 0`. It is the
+  same class of bug as an `if (!list.length)` guard on an empty list, and it would have been a
+  capability hole with a test suite around it.
+- **The route audit runs in `onReady` and throws**, so a handler added straight to the app
+  cannot ship. This has a testing cost that cost me three failures: Fastify refuses `get` and
+  `addHook` on a readied instance, so such a test must own the `ready()` call. That is what
+  `createTestApp({ deferReady: true })` is for, and it is why the flag exists at all.
+- **`@fastify/static` needs an exemption**, or a real frontend build makes the app refuse to
+  boot. It keys on `config.file` *and* `config.rootPath`, both present, and the audit also
+  skips `HEAD` where `GET` is declared. The exemption is tested against a capability
+  declaration that merely names a file, which is the case that would otherwise hide a hole.
+- **Services are decorated on the app, not built per handler.** A handler that constructed its
+  own would hold a second Knex pool and open a transaction its other writes could not join.
+  `createServer` now takes the Knex instance and builds the service once, which also removed
+  the unused-parameter lint error that was the visible symptom of the wrong signature.
+
+**The one thing I should have checked first.** `pnpm test:coverage` was green *and meaningless*.
+Installing `@vitest/coverage-v8` fixed the crash, but the root `vitest.config.ts` had no
+`coverage.thresholds`, so the command measured the whole tree and exited 0 regardless. A DoD box
+checked by assertion is exactly what the box was written to prevent. The threshold now exists,
+is scoped to `services/**` and `packages/shared`, and I verified it fails by raising the floor
+to 100% and watching the exit code change. **A gate that has never been seen to fail is not
+known to be a gate.**
+
+**Later the same day the owner raised the floor to 95% and asked for it in CI, plus a reporter
+that shows only failures.** The floor change immediately failed, on `dateKeyRange` in
+`packages/shared/src/time.ts` — a public helper with no test at all. Six tests now cover it,
+including a DST transition. Measured after: services 98.7%, packages/shared 95%. The reporter
+is `dot` when `CI` is set, `default` locally, overridable with `VITEST_REPORTER`.
+
+**Coverage is 98.7% on services and 95% on packages/shared**, from one real service file and
+one uncovered helper that is now tested. That number is real and it is also not much of a claim:
+it is one service. The threshold matters more as the entity services arrive, and 95% is
+strict enough that a new service with an untested branch will fail the build on the day it is
+written rather than after it has been shipped for a month.
+
+### 2026-09-29 — Session 7: project logger, and an audit of 0.2.0
+
+**The owner's instruction:** one logger class for the whole project, a singleton, logging
+the good path as well as the failures, driven by an env level, writing to a channel, and
+one line format. Then: check 0.2.0's acceptance criteria and make the documentation current.
+
+**The logger.** Two classes, not one shared module, because the owner's decision was that
+backend and frontend have different implementations: `apps/api/src/lib/logger.ts` and
+`apps/web/src/lib/logger.ts`. They deliberately share the **level names and the line
+format** and nothing else. The API's timestamp comes from `nowMs()` (ground rule 4), so a
+test can freeze the clock and assert an exact line; the web one uses `Date.now()` because
+it has no timing behaviour to test and no other module depends on its clock. All 15 existing
+`console.*` call sites were converted, so one `LOG_LEVEL` now controls the whole API.
+
+**Two things the design forced, that are worth remembering.**
+
+- The logger reads `process.env` itself rather than taking its level from `AppConfig`. It
+  cannot do otherwise: `main.ts` reports a `ConfigError` *through* the logger, and a logger
+  that depends on a successfully parsed config cannot log the failure that parsing produced.
+  `configSchema` validates the same variable so a typo is also refused at boot by name.
+- Errors and warnings go to **stderr**, everything else to stdout. That was my call, not the
+  owner's — they said "stdout, use the console APIs", which I read as "the console, not a
+  file or a remote sink". Node routes `console.warn`/`console.error` to fd 2 for free, so
+  `2>errors.log` works; `docker compose logs` shows both. **If the owner wants one stream,
+  this is the line to change**, and it is `CONSOLE_METHOD` in either logger.
+
+**Routing the API through the logger had a side effect worth catching.** `server.ts` logged
+"no frontend build; serving the API only" through Fastify's pino logger, which is off in
+tests, so the message was silent. Through the project logger it printed on every test that
+builds a server, burying real failures under dozens of identical lines. `vitest.config.ts`
+now sets `LOG_LEVEL=silent` unless the environment already sets one, so
+`LOG_LEVEL=debug pnpm test` still shows everything. `migrate.int.test.ts` pins `info` for
+the CLI it spawns, because it asserts on the migrator's real output and silence would have
+made those assertions vacuous.
+
+**The 0.2.0 audit, which is the more important half of this session.** The release is
+**not done**, and the honest answer is that roughly a quarter of it exists:
+
+- **Done (3 of 14 criteria):** the 13 no-delete triggers with an enumeration test
+  (`DATA-10`), `uid` and `archived_at` on every user-data table (`DATA-13`/`DATA-11`), and
+  the five green commands. All schema-layer, all covered by `schema.test.ts` (57 tests).
+- **Half (3):** the 3-link trigger exists but no route returns 422; `todo` has a foreign key
+  and `archived_at` but nothing asserts archiving keeps the entries; `project_id` is
+  nullable but there is no virtual bucket.
+- **Not started (8):** everything needing a service, a route or a component.
+
+`apps/api/src/services/`, `apps/api/src/views/` and `apps/api/src/middleware/` **do not
+exist**. There is no route except `/health`, and the web app is still the 0.1.0 health shell.
+So archive, restore, CRUD, the activity log and the capability map have nowhere to live, and
+**the 0.2.0 exit test cannot be run at all** — it creates projects and tasks through a UI
+that does not exist. `docs/PLAN.md` and the release spec both still said "not started",
+which is now wrong in a different direction, so both were rewritten with the real position.
+
+**Documentation corrected, because each of these was actively misleading:**
+
+- `LOG_LEVEL` was documented in `.env.example` and read correctly, and **did nothing in
+  Docker**, because neither service listed it. This is the bug that passes every test,
+  since no test runs in a container. Now passed to both containers and verified with
+  `docker compose config`.
+- `pnpm test:coverage` was documented in two files as "fails below 80% on business modules",
+  which reads as a working gate. It had never worked: `@vitest/coverage-v8` was not installed.
+  Installed in the Phase 0 session below, matched to the Vitest major — see the gotcha above.
+- `docs/TESTING.md` documented `pnpm test:ui` and `pnpm perf`. Neither script exists.
+- `AGENTS.md` had no mention of logging at all. It now has ground rule 12, a rejected-pattern
+  row for `console` and for logging libraries, a stack-table row, and a Part 12 history entry.
+- `README.md` now documents the line format and `LOG_LEVEL` under Logs.
+
+**Verified, not assumed:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (15 files, 220 tests),
+`pnpm test:int` (3 tests) and `pnpm build` all pass; `docker compose config` resolves
+`LOG_LEVEL` into both services. Zero `delete*` functions, zero `DELETE` routes, zero
+`ON DELETE CASCADE`; 42 test `describe` blocks name a requirement ID; nine external runtime
+dependencies against a target of ten.
+
+**Still open, deliberately not done here:** the eight unimplemented criteria, and whether the
+stderr/stderr split above is what the owner wanted.
 
 ### 2026-09-28 — Session 1: planning only, no code
 
@@ -448,6 +693,44 @@ Things a future session should not have to rediscover. Checked and ticked when d
 - [x] **`better-sqlite3` builds correctly**: `onlyBuiltDependencies` and `allowBuilds` are set
       in `pnpm-workspace.yaml` (pnpm 11 ignores a `pnpm` field in `package.json`). Note the
       docs still describe the old `package.json` form in places.
+- [ ] **0.2.0 has its foundation but not its entities.** The schema is complete and tested, and
+      the three layers now exist: `apps/api/src/{lib,middleware,routes,repositories,services}/`,
+      with the error envelope, the principal seam, the declared-route table, the activity log
+      and the first service. Still missing: `apps/api/src/views/`, the entity services
+      (project, task, todo, tag, link, acceptance criteria), every route but `/health`, and the
+      whole web UI beyond the 0.1.0 health shell. **5 of 14 acceptance criteria are done, 5 are
+      half, 4 are not started. The exit test still cannot be run**, because it drives a UI.
+      Full breakdown in [`docs/RELEASES/v0.2.0.md`](docs/RELEASES/v0.2.0.md). The next session
+      that touches 0.2.0 should start with the entity services and routes, not more foundation.
+- [x] **`pnpm test:coverage` works *and* gates.** `@vitest/coverage-v8@2.1.9` installed as a root
+      devDependency on 2026-09-29, matched to the repo's Vitest major. Installed unpinned it
+      pulls v5 and dies with `vitest/node does not provide an export named
+      'BaseCoverageProvider'`. The **95%** floor (raised from 80% by owner decision) is a
+      `thresholds` block in `vitest.config.ts`, so the command fails below it — verified by raising it to 100% and
+      watching it exit 1. Services 98.7%, packages/shared 95%. Raising the floor from 80% to
+      95% exposed `dateKeyRange` in `time.ts` having no test at all; it has six now.
+- [x] **CI runs `pnpm test:coverage` as its own step** after `Test`, and the reporter is `dot`
+      when `CI` is set, `default` locally, `VITEST_REPORTER` to override. `dot`, not `silent` —
+      `silent` prints the failures too, which is the opposite of the point. The `gates` job
+      timeout went 15 → 20 min to absorb the extra suite run.
+- [ ] **A route audit that runs in `onReady` cannot be tested against a `ready` app.** Fastify
+      refuses `app.get(...)` and `app.addHook(...)` on an instance that has been readied —
+      `Fastify instance is already listening. Cannot add route!` — so a test that wants to
+      register an undeclared route and observe the audit failing has to own the `ready()`
+      call itself. `createTestApp({ deferReady: true })` is the seam. Cost me three test
+      failures that were all the same mistake, in three different forms.
+- [ ] **`@fastify/static` registers routes the audit would otherwise reject.** One route per
+      built file, with no capability declaration, so a real frontend build would make the app
+      refuse to boot. The exemption keys on `config.file` and `config.rootPath`, both present,
+      and the audit also skips `HEAD` when `GET` is declared. Do not "simplify" this away: the
+      test that covers it is in `routes/table.test.ts`.
+- [ ] **The stderr/stdout split in the logger is my call, not the owner's.** `warn` and
+      `error` go to `console.warn`/`console.error` (fd 2), everything else to stdout. If the
+      owner wants one stream, it is `CONSOLE_METHOD` in `apps/api/src/lib/logger.ts` and the
+      same constant in `apps/web/src/lib/logger.ts`.
+- [ ] **`pnpm test:ui` and `pnpm perf` were documented in `docs/TESTING.md` but do not
+      exist.** Removed from the doc on 2026-09-29. If either was meant to exist, it needs
+      writing; nothing references them.
 - [ ] **Eight open questions** (`OQ-1`…`OQ-8` in `docs/ROADMAP.md` §9) all have stated
       defaults so nothing is blocked. The two worth an answer when convenient: `OQ-1`, is
       MCP in scope for 1.0.0; `OQ-5`, the real office timesheet text format.

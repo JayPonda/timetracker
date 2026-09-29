@@ -37,6 +37,10 @@ x-pdm-common: &pdm-common
     PDM_DATA_DIR: /data
     PDM_BACKUP_DIR: /backups
     PDM_BACKUP_COUNT: ${PDM_BACKUP_COUNT:-14}
+    # The migrator is its own container and logs through the same logger, so it
+    # needs the level too. Omitting it here meant a `LOG_LEVEL` in `.env` worked
+    # in `pnpm dev` and did nothing in Docker, which is the case that matters.
+    LOG_LEVEL: ${LOG_LEVEL:-info}
 
   # Docker-managed volumes, not host bind mounts.
   #
@@ -114,6 +118,9 @@ services:
       # above, not this bind address.
       PDM_BIND_HOST: 0.0.0.0
       PDM_INTERNAL_PORT: 8080
+      # Also set on `pdm-migrate` above. Both containers log through the same
+      # logger, and one level that controls the whole application is the point.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
 
     healthcheck:
       test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8080/health']

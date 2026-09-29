@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { endOfLocalDay, localDateKey, startOfLocalDay, zonedParts, zoneOffsetMs } from './time.js';
+import {
+  dateKeyRange,
+  endOfLocalDay,
+  localDateKey,
+  startOfLocalDay,
+  zonedParts,
+  zoneOffsetMs,
+} from './time.js';
 
 /** Epoch ms for a UTC wall-clock time, so the fixtures read as dates. */
 function utc(y: number, m: number, d: number, h = 0, min = 0, s = 0): number {
@@ -89,5 +96,61 @@ describe('NFR-TIME-01: consecutive days tile the timeline without gaps', () => {
     const day2 = startOfLocalDay(utc(2026, 3, 9, 16), tz);
 
     expect(endOfLocalDay(day1, tz)).toBe(day2);
+  });
+});
+
+describe('NFR-TIME-01: a date range covers every day in it', () => {
+  it('is a single day when both ends are the same day', () => {
+    const tz = 'Europe/Berlin';
+    const from = utc(2026, 5, 4, 9);
+    expect(dateKeyRange(from, from + 60_000, tz)).toEqual(['2026-05-04']);
+  });
+
+  it('is inclusive of the last day', () => {
+    // An exclusive end would silently drop a day of work from a report, which is
+    // the kind of error that is only noticed a month later.
+    const tz = 'Europe/Berlin';
+    expect(dateKeyRange(utc(2026, 5, 4, 9), utc(2026, 5, 6, 17), tz)).toEqual([
+      '2026-05-04',
+      '2026-05-05',
+      '2026-05-06',
+    ]);
+  });
+
+  it('spans a DST transition without repeating or skipping a date', () => {
+    // Berlin springs forward on 2026-03-29. The day is 23 hours long, and a range
+    // computed by adding 24 hours per day would drift and mislabel everything
+    // after it.
+    const tz = 'Europe/Berlin';
+    expect(dateKeyRange(utc(2026, 3, 28, 12), utc(2026, 3, 30, 12), tz)).toEqual([
+      '2026-03-28',
+      '2026-03-29',
+      '2026-03-30',
+    ]);
+  });
+
+  it('crosses a year boundary', () => {
+    const tz = 'UTC';
+    expect(dateKeyRange(utc(2025, 12, 31, 23), utc(2026, 1, 1, 1), tz)).toEqual([
+      '2025-12-31',
+      '2026-01-01',
+    ]);
+  });
+
+  it('is empty for a reversed range, since it contains no days', () => {
+    // A picker can hand over its bounds in either order. A reversed range
+    // genuinely covers no days, so the empty list is the truthful answer; the
+    // alternative, silently swapping the ends, would report days the caller
+    // never asked about.
+    const tz = 'UTC';
+    expect(dateKeyRange(utc(2026, 5, 6, 12), utc(2026, 5, 4, 12), tz)).toEqual([]);
+  });
+
+  it('stops rather than spinning when the range is absurdly long', () => {
+    // Four thousand days is about eleven years, far past any report anyone will
+    // ask for, and the bound is what makes an over-wide range a bounded answer
+    // instead of a hang.
+    const tz = 'UTC';
+    expect(dateKeyRange(0, utc(9999, 12, 31), tz)).toHaveLength(4000);
   });
 });

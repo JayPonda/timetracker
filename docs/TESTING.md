@@ -29,10 +29,20 @@ vocabulary: a test that protects `FR-GATE-05` says so in its name.
 | **Manual** | The owner exit test script | Written per release | every release, before the next starts |
 | **Performance** | The `NFR-PERF-01`…`03` budgets on the `seed:perf` fixture | A script that writes results to `PERF.md` | before 0.9.0 and at 1.0.0 |
 
-Coverage target: **at least 80% on business-rule modules** (`NFR-MAINT-01`), which are
-`apps/api/src/services/**` and `packages/shared`. Coverage is measured, not asserted in
-prose; the CI job fails below the threshold. Overall coverage is reported but not gated,
-because a gated global number produces tests that exist to be counted.
+Coverage target: **at least 95% on business-rule modules** (`NFR-MAINT-01`), which are
+`apps/api/src/services/**` and `packages/shared`. The floor was 80% until 2026-09-29, when
+the owner raised it; raising it immediately found `dateKeyRange` in
+`packages/shared/src/time.ts` with no test at all, which is the strongest argument for the
+higher number.
+
+The floor lives in `vitest.config.ts` as a `thresholds` block, so `pnpm test:coverage` fails
+below it and the CI `gates` job runs that command as its own step. It is not a number anyone
+has to read in a report and remember to check. The threshold was verified to fail by raising
+it to 100% and watching the command exit 1, which is the only way to know a gate is a gate.
+
+Overall coverage is reported but not gated, because a gated global number produces tests that
+exist to be counted. `repositories/**` and `middleware/**` are in the report for the same
+reason: visible when they collapse, not able to fail a build on their own.
 
 ## 3. The non-negotiable test list
 
@@ -83,11 +93,9 @@ pnpm install
 
 pnpm test                # everything, once
 pnpm test:watch          # watch mode
-pnpm test:ui             # service and API tests only
-pnpm test:coverage       # with coverage, fails below 80% on business modules
+pnpm test:coverage       # with coverage, fails below 95% on business modules
 pnpm test:int            # integration: SSE, migrations, backup and restore
 pnpm test:e2e            # Playwright, from 1.0.0
-pnpm perf                # measure and write into docs/PERF.md
 ```
 
 A single test by requirement:
@@ -130,7 +138,7 @@ pnpm test -t 'DATA-10'
 ## 8. Before 1.0.0
 
 - [ ] All twenty non-negotiable tests exist and pass
-- [ ] Business-module coverage at or above 80%, measured
+- [ ] Business-module coverage at or above 95%, measured by `pnpm test:coverage`
 - [ ] Every Must requirement maps to a test or a written deferral
 - [ ] Playwright smoke covers the critical path of all 29 user stories
 - [ ] Performance baselines recorded in `PERF.md` on `seed:perf`

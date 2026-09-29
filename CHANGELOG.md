@@ -12,6 +12,74 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ### Added
 
+- **Added** the API foundation layer, the three layers every later service writes
+  through. No business entity is served yet; this is the ground they stand on.
+
+  - `apps/api/src/lib/errors.ts` — the typed `AppError` a service throws, and one
+    `code → status` map so a refusal keeps its identity instead of having it guessed
+    from a message. `validationDetails` turns a Zod failure into
+    `details.issues[]` with a dotted field path (`details.owner.name`), and
+    deliberately does **not** echo the submitted value, so a failed validation
+    cannot be turned into a read-back channel (`UI-08`).
+  - `apps/api/src/middleware/error.ts` — the error envelope, extracted from
+    `server.ts`. A 5xx is replaced with a generic message and a log line, because a
+    SQLite error names a file path and a constraint name. Every error response
+    carries the request id, so a bug report can be matched to a line.
+  - `apps/api/src/middleware/principal.ts` — the local user and an anonymous
+    principal. MCP token resolution is 0.10.0; the seam is built now.
+  - `apps/api/src/middleware/services.ts` — one service instance per process,
+    reached through a Fastify decorator. A handler that built its own would hold a
+    second Knex pool and open a transaction its other writes could not join.
+  - `apps/api/src/routes/table.ts` — every route is **declared** with its
+    capabilities (`MCP-14`, `DATA-09`). `DELETE` is unrepresentable: `declare`
+    throws. A declaration with an empty capability set is refused at boot rather
+    than allowed. An `onReady` hook **refuses to boot** if a route exists that the
+    table never saw, so a handler added straight to the app cannot ship
+    unauthorised.
+  - `apps/api/src/repositories/activity-log.repository.ts` and
+    `apps/api/src/services/activity-log.service.ts` — the first repository and the
+    first service (`FR-STAT-05`). Appends a before/after pair and a changed-field
+    diff, and writes nothing when nothing changed.
+  - `packages/shared/src/uid.ts` — UUIDv7 through the `nowMs()` seam, which
+    nothing previously generated.
+
+- **Added** `@vitest/coverage-v8`, pinned to 2.1.9 to match Vitest 2.1.9. The v8
+  provider is the one Vitest 2 supports; the latest release is a v3-era package and
+  fails at load with `does not provide an export named 'BaseCoverageProvider'`.
+
+- **Added** an enforced **95%** coverage floor to `vitest.config.ts`, scoped to
+  `apps/api/src/services/**` and `packages/shared`. Before this, `pnpm test:coverage`
+  measured and exited 0 regardless of the result, so a release Definition-of-Done
+  box was being checked by assertion. The floor was verified to actually fail by
+  raising it to 100% and watching the command exit 1. `repositories/**` and
+  `middleware/**` are reported but not thresholded, deliberately: a query is
+  verified by the service test that uses it, and a threshold that scaffolding can
+  break is a threshold the team learns to ignore.
+
+- **Changed** CI now runs `pnpm test:coverage` as its own step in the `gates` job
+  (`NFR-MAINT-01`), so coverage is a gate on the default branch rather than
+  something to remember. It is a separate step and not a flag on `pnpm test` for
+  two reasons: a combined step reports a coverage failure as "tests failed", which
+  sends the next person to the wrong file; and the instrumented run is slower
+  enough that folding it in would buy nothing.
+
+- **Changed** the Vitest reporter is `dot` when `CI` is set and `default` locally,
+  overridable with `VITEST_REPORTER`. A CI log currently prints a line per test
+  file — 22 files and growing — so a red build opens on noise rather than on the
+  cause. `dot` prints a character per file and expands only the failures. The
+  tests, assertions and exit code are identical either way, which is why this is
+  an environment switch rather than a separate `test:ci` script that could drift
+  from `pnpm test`. It is `dot` rather than Vitest's `silent` reporter because
+  `silent` hides the failures as well as the passes.
+
+- **Fixed** `dateKeyRange` in `packages/shared/src/time.ts` had no test at all. It
+  is a public helper that walks a day range by repeatedly advancing to the next
+  local midnight, and it is what day-bucketed reports are built from. Found by
+  raising the coverage floor from 80% to 95%, which is the best argument for the
+  higher number. It now has six tests, including a DST transition day (where a
+  naive 24-hours-per-day implementation drifts) and the 4000-day bound that keeps
+  an over-wide range from looping.
+
 - **Added** a project logger, used everywhere instead of `console`. One `Logger`
   class per app, each a singleton exported as `logger`:
   `apps/api/src/lib/logger.ts` and `apps/web/src/lib/logger.ts`. Standard levels
@@ -68,6 +136,16 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
   data directory (data and settings preserved).
 - **Changed** `knex` is now the query-builder dependency of `apps/api`; `umzug` was
   removed. `drizzle-orm` had already been dropped (see 0.1.0 record).
+- **Changed** `createServer` now takes the Knex instance instead of opening its own
+  connection. It builds the services once, decorates them on the app, and passes the
+  instance to the repositories that need it. Opening a connection per test
+  application is what made the second pool, and the second transaction that
+  would not join the first, easy to write by accident.
+- **Changed** an unhandled request error can no longer escape as a default Fastify
+  500. `error.ts` handles it, an unparsed `ZodError` from a handler is reported as a
+  422 naming the field rather than as a server fault, and the response status and
+  the envelope's `code` always agree — so a 403 no longer arrives labelled
+  `validation_failed`, which a client could not tell apart from a typo.
 
 
 ## [0.1.0] — Foundation & runtime

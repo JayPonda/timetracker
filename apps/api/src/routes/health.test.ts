@@ -34,7 +34,9 @@ describe('DEP-06: GET /health reports the app is alive', () => {
 
   it('returns a version', async () => {
     const { app: server } = await app();
-    expect((await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>().version).toBeTruthy();
+    expect(
+      (await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>().version,
+    ).toBeTruthy();
   });
 
   it('returns an uptime in seconds', async () => {
@@ -81,7 +83,9 @@ describe('DEP-06: the health check is a real check', () => {
     // A container that is up but has not finished migrating must not claim to be
     // healthy, or `docker compose up` returns before the schema is ready.
     const { app: server, db } = await app();
-    db.prepare('DELETE FROM knex_migrations WHERE id = (SELECT MAX(id) FROM knex_migrations)').run();
+    db.prepare(
+      'DELETE FROM knex_migrations WHERE id = (SELECT MAX(id) FROM knex_migrations)',
+    ).run();
 
     const body = (await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>();
     expect(body.migrations.pending).toBe(1);
@@ -145,9 +149,9 @@ describe('the error envelope is used for every failure', () => {
     const res = await server.inject({ method: 'GET', url: '/api/nope' });
 
     expect(res.statusCode).toBe(404);
-    expect(res.json<{ error: { code: string; message: string; status: number } }>().error.code).toBe(
-      'not_found',
-    );
+    expect(
+      res.json<{ error: { code: string; message: string; status: number } }>().error.code,
+    ).toBe('not_found');
   });
 
   it('the envelope carries the request id', async () => {
