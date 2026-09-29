@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The base config sets noEmit for `pnpm typecheck`. A real build has to
+    // emit, so it is turned back on here rather than removed from the base.
+    "noEmit": false,
+    "declaration": true,
+    "sourceMap": false
+  },
+  "exclude": ["src/**/*.test.ts"]
+}

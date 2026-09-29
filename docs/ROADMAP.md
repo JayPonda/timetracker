@@ -108,7 +108,7 @@ Full rationale per decision in the ADRs. This is the summary.
 | Runtime | Node.js 22+, TypeScript, one container `pdm` | One language across the stack, small image, matches SRS §3.1 (answers `Q5`) |
 | API | **Fastify** + TypeScript | Schema-based validation (→ `NFR-SEC-02`), `app.inject()` for network-free tests, small and fast |
 | Database | **SQLite** through `better-sqlite3`; `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL` | Synchronous driver makes transactions *trivially* correct (`DATA-08`); one file, trivial backup (`DEP-03`, `DEP-07`) |
-| Data access | **Drizzle ORM** for typed queries + hand-written versioned SQL migrations | Typed, no codegen step, migrations stay readable and auditable (`NFR-MAINT-02`) |
+| Data access | **Drizzle ORM** for typed queries + versioned SQL migrations run by **Umzug** over our `schema_migrations` ledger | Typed, no codegen step, migrations stay readable and auditable (`NFR-MAINT-02`); the runner is a thin wrapper, not ours to maintain ([ADR 0009](adr/0009-migration-runner-umzug.md)) |
 | Aggregates | **SQL views**: `v_task_totals`, `v_todo_totals`, `v_tag_totals`, `v_day_totals`, `v_project_totals` | `DATA-04`: totals are never stored, so they cannot drift, and the app code does not compute them |
 | Running timer | The `time_entries` row with `ended_at IS NULL` **is** the state; elapsed = `now − started_at` | Survives refresh, browser close, container restart (`FR-TIME-06`, `FR-TIME-10`) with no extra state. Enforced by a partial unique index (`DATA-02`) |
 | Time | Epoch-millisecond `INTEGER`, stored UTC; day boundaries computed in `TZ` via a small in-house `Intl` helper | DST-safe durations (`NFR-TIME-01`, `DATA-07`) with no date library dependency |

@@ -8,7 +8,12 @@ dist/
 build/
 *.tsbuildinfo
 
-# Runtime data (never commit user data)
+# Runtime data (never commit user data).
+#
+# Since the switch to Docker-managed volumes there is no data directory in the
+# working tree: the database lives in the `pdm_pdm-data` volume. These entries
+# stay so a leftover folder from the earlier bind-mount setup is never committed
+# by accident, and so a local `pnpm` run has somewhere to put its database.
 data/
 backups/
 *.db

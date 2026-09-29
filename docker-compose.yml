@@ -1,0 +1,126 @@
+# Personal Day Manager — one application container (ADR 0001).
+#
+# There is no frontend container and no proxy: one process serves the API and
+# the built frontend, so there is no CORS to configure and no second origin.
+#
+# `pdm` runs the app. `pdm-migrate` is a **one-shot job container** from the same
+# image: it applies the migrations and exits. `pdm` waits for it to exit 0
+# (`service_completed_successfully`) and never starts otherwise. So there is
+# exactly one thing that writes schema, and it is not the server.
+#
+# SQLite is a file, not a service, so the migrator has no database to wait for.
+# What it does need is exclusive access to the file during DDL, and the ordering
+# below is what provides it: nothing holds /data open while the schema changes.
+#
+# `pdm-mcp` is added in 0.10.0. It will reach the app over this same network,
+# which is why the app binds 0.0.0.0 inside the container.
+
+name: pdm
+
+# Shared by both services, so the two cannot drift on the data directory, the
+# time zone, the non-root user, or the security posture.
+x-pdm-common: &pdm-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: pdm:0.1.0
+
+  environment:
+    NODE_ENV: production
+    TZ: ${TZ:-UTC}
+    PDM_DATA_DIR: /data
+    PDM_BACKUP_DIR: /backups
+    PDM_BACKUP_COUNT: ${PDM_BACKUP_COUNT:-14}
+
+  # Docker-managed volumes, not host bind mounts.
+  #
+  # This started as `./data:/data` and failed intermittently. Measured on the
+  # development machine, same image and same command, changing nothing else:
+  #
+  #   host bind mount, repo folder   1 of 5 runs migrated (SQLITE_CANTOPEN)
+  #   host bind mount, local temp    2 of 5 runs migrated (SQLITE_CANTOPEN)
+  #   Docker-managed named volume    6 of 6 runs migrated
+  #
+  # The cause is Docker Desktop's host file-sharing layer, not this project's
+  # permissions, its code, or the folder being synced. `access()` reported the
+  # directory writable while SQLite could not create a file in it, and once the
+  # app was caught running against `/data/pdm.db (deleted)` — a live database
+  # held as an unlinked inode that vanishes on restart.
+  #
+  # A named volume removes the unreliable layer instead of documenting around
+  # it, and it is the smaller change: no host path to create, own or chown.
+  # The database is still a plain SQLite file. To read it with any SQLite
+  # client, see the README.
+  volumes:
+    - pdm-data:/data
+    - pdm-backups:/backups
+
+  # No privileged mode, no added capabilities, no host network (NFR-SEC-04).
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  # Applies the migrations, then stops. Exit code 0 is the only thing `pdm` waits
+  # on, so this container is where a bad migration becomes a visible, named
+  # failure rather than a half-started app (DEP-09).
+  pdm-migrate:
+    <<: *pdm-common
+    container_name: pdm-migrate
+    # Never restart. A migration that fails must fail once and stay failed, or
+    # the owner gets a container that loops instead of an error to read.
+    restart: 'no'
+    command: ['node', 'api/cli/migrate.js']
+
+  pdm:
+    <<: *pdm-common
+    container_name: pdm
+    restart: unless-stopped
+
+    depends_on:
+      pdm-migrate:
+        condition: service_completed_successfully
+        # `restart: false` so restarting the app alone does not re-run
+        # migrations. Run `docker compose up -d` when the schema changes.
+        restart: false
+
+    # Published on loopback only. Docker's port publishing is the network
+    # boundary, which is what satisfies NFR-SEC-01: nothing on the LAN can reach
+    # the app, and the future MCP container still can (ADR 0001, SRS S1).
+    ports:
+      - '127.0.0.1:${PDM_PORT:-8080}:${PDM_INTERNAL_PORT:-8080}'
+
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-UTC}
+      PDM_DATA_DIR: /data
+      PDM_BACKUP_DIR: /backups
+      PDM_BACKUP_COUNT: ${PDM_BACKUP_COUNT:-14}
+      # 0.0.0.0 on purpose. Do not "fix" this to 127.0.0.1: it breaks the MCP
+      # container's access path, and the loopback boundary is the published port
+      # above, not this bind address.
+      PDM_BIND_HOST: 0.0.0.0
+      PDM_INTERNAL_PORT: 8080
+
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8080/health']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# Named volumes for the database and its backups.
+#
+# Declared at the project level, so Compose gives them the `pdm_` prefix and
+# `docker compose down -v` removes them with everything else. `docker volume ls`
+# and `docker volume inspect pdm_pdm-data` show where the data physically sits.
+volumes:
+  pdm-data:
+  pdm-backups:

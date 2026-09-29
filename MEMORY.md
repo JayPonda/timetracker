@@ -205,17 +205,197 @@ branch, so a tag always points at something that is on the release path.
 `feature/0.1.0-foundation`, not on `main`. `main` currently holds the two planning commits
 only, which is correct.
 
+### 2026-09-28 — Session 4: migrations moved to Umzug
+
+**The owner's instruction:** stop maintaining the migration runner. "If it's not violated,
+then at the end migration running is not our work, it's handled by library, so ours is just
+the wrapper."
+
+**What changed.** `apps/api/src/db/migrate.ts` went from a 293-line hand-rolled runner to a
+wrapper over **Umzug 3.8.3**. The SQL files are unchanged and still hand-written; the
+runner is no longer ours. Recorded as `D-22` and
+[ADR 0009](docs/adr/0009-migration-runner-umzug.md).
+
+**Umzug, not `drizzle-kit`, and the reason matters if this is revisited.** `drizzle-orm` is
+already the query layer, so `drizzle-kit` was the obvious candidate — but it makes the
+*author* of the migration a schema object, which is exactly the auditability trade
+`NFR-MAINT-02` refuses. Umzug only decides who *applies* a migration. If 0.2.0's 15 tables
+make hand-writing SQL painful, the right answer is a generated-SQL review step, not an ORM
+replacing the ledger.
+
+**Two things that were not obvious and cost time.**
+
+- Umzug's storage contract is only three methods (`logMigration`, `unlogMigration`,
+  `executed`), and it keys migrations by **filename** (`0002_settings.sql`). Our ledger
+  stores the **slug** and a version number. The wrapper translates through the manifest in
+  `executed()`. Get this wrong and Umzug re-applies every migration on every boot, which
+  fails with `UNIQUE constraint failed: schema_migrations.version` — the symptom does not
+  mention filenames at all.
+- Umzug's glob resolver **spreads the resolver's return value after its own `path`**, so
+  returning `path: undefined` from a resolver silently clobbers a good value.
+
+**The accepted cost, stated plainly:** Umzug calls `up()` and *then* records the row, so the
+DDL and the ledger row are two transactions. A crash in that window leaves a migration
+applied but unrecorded, and the next boot re-runs it and fails loudly with a named backup.
+That is the project's preferred failure mode, and it is cheaper than the code it replaced.
+
+**Verified, not assumed:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (71) and
+`pnpm build` all pass; the CLI applies `0001` then `0002`, is idempotent on a second run,
+and writes `pre-NNNN` backups; a deliberately broken migration rolls back with no partial
+table, names its backup, and restores; the Docker image builds and reaches `healthy` with
+2 migrations applied, and a container restart applies nothing new.
+
+### 2026-09-28 — Session 5: the `pdm-migrate` container
+
+**The owner's instruction:** a container that applies the migrations; the app starts only
+after it has run and stopped. `D-23`, [ADR 0010](docs/adr/0010-migration-container.md).
+
+**Decided together:** the app **refuses** to boot against an un-migrated schema
+(`SchemaNotReadyError`) rather than still applying migrations as a safety net. One owner
+for migrations. `pnpm dev` runs `pnpm --filter api migrate` first, so local and Docker
+obey the same rule by different means.
+
+**The shape that works:**
+
+```yaml
+pdm-migrate:
+  <<: *pdm-common
+  restart: 'no'
+  command: ['node', 'api/cli/migrate.js']
+
+pdm:
+  <<: *pdm-common
+  depends_on:
+    pdm-migrate: { condition: service_completed_successfully, restart: false }
+```
+
+`restart: false` on the dependency is what makes `docker compose restart pdm` restart only
+the app. Without it, restarting the app re-runs migrations. Verified by comparing the
+migrator container's `StartedAt` before and after.
+
+**Two things that surprised me, and both are the kind of thing that wastes an hour.**
+
+- **The migrator's exit code is the entire contract.** `service_completed_successfully`
+  reads the exit code and nothing else, so a failed migration was showing a stack trace
+  and, worse, any path that returned 0 would have started the app anyway. The CLI now
+  catches, prints the message that names the backup file, and `process.exit(1)`. There is
+  an integration test that runs the CLI as a **child process** and asserts its exit code,
+  because calling `migrate()` directly would pass while the container started regardless.
+- **A migration is baked into the image.** My first attempt to test a broken migration
+  failed open: the container never saw the new `.sql` file, so it reported "up to date" and
+  started happily. `docker compose build` before `up` when the schema changes. This is
+  correct and intentional — the schema is tied to the build that expects it — but it makes
+  "I added a migration and nothing happened" a very quiet failure.
+
+**The SQLite point the owner got right:** SQLite is a file, not a service, so the migrator
+has no database to wait for. What it needs is *exclusive* access during DDL, and the
+ordering provides it. It also makes the restore-on-failure path safer than before: nothing
+holds `/data` open while a backup is copied over the live database.
+
+**Verified in Docker, not assumed:** migrator exits 0 → app healthy; a deliberately broken
+`0003` → migrator exits 1 and `pdm` is left in `created`, never `running`, nothing
+listening; force-starting `pdm` past its dependency → it refuses with
+`1 migration(s) have not been applied: 0003_broken` and exits 1; a real `ALTER TABLE`
+`0003` over existing data → applied, `theme=system` and all 7 settings rows intact;
+`restart pdm` → migrator not re-run.
+
+### 2026-09-28 — Session 6: the clean-checkout gate that only failed when I tested it
+
+**The bug:** `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` were all green in
+the working tree. On a clean copy they were not. `tsc -b` failed with
+`TS2307: Cannot find module '@pdm/shared'` in three files.
+
+**Why:** `packages/shared/package.json` points `main`, `types` and `exports` at `./dist`,
+and `dist` is git-ignored. So on a fresh clone it does not exist until something builds
+it. `pnpm build` happened to work because `pnpm -r build` walks the workspace in
+dependency order, and `pnpm dev` worked because I had already added a shared build to it.
+`typecheck` and `test` were bare `tsc -b` and bare `vitest run`, so they assumed a build
+had already happened. They inherited a green result from my earlier builds.
+
+**The lesson, which is the second time this has bitten this repo:** a gate that only ever
+runs in a dirty tree is not a gate. I had run `pnpm lint && pnpm typecheck && pnpm test`
+many times and reported them green. The only reason this surfaced is that acceptance
+criterion 14 says *"from a clean install"*, so I built a clean copy from
+`git ls-files -co --exclude-standard` and ran the gates there. Do that once per release
+before claiming a gate passed.
+
+**Fix:** `typecheck`, `test`, `test:watch`, `test:coverage` and `test:int` now build
+`@pdm/shared` first, the same way `dev` and `build` already did. The alternative was
+TypeScript project references with `composite: true`, which is the more correct answer but
+also means `noEmit: false` and `declaration: true` in the base config, and it touches the
+Docker build. Noted in `BACKLOG.md` as a cleanup, not done now.
+
+Verified in a fresh `/tmp` copy: `pnpm install --frozen-lockfile`, then lint, typecheck,
+78 tests, build and 3 integration tests all pass with no `dist` present beforehand.
+
+### 2026-09-28 — Session 7: a database that kept vanishing, and three wrong diagnoses
+
+**What happened.** The 0.1.0 owner exit test could not be trusted. A fresh
+`rm -rf data && mkdir data && docker compose up -d` failed roughly two runs in three with
+`SQLITE_CANTOPEN`, and the migrator exited 1, so the app never started. Intermittently,
+`docker compose ps` showed both services stuck in `Created` with an empty migrator log.
+
+Worse, at one point the running app was healthy while `ls /data` inside the container
+returned nothing and the process held `/data/pdm.db (deleted)`. The live database was an
+unlinked inode. A restart would have destroyed it and the host would have held nothing.
+
+**I got the cause wrong twice, and both wrong answers were plausible enough to act on.**
+
+1. *Google Drive.* The repository is at `/Users/jayponda/Drive/...`, and `MEMORY.md` had
+   already warned that live SQLite data must not live in a synced folder. I moved the
+   volumes to `~/.local/share/pdm` and was about to call it fixed. Then the failure
+   reproduced from a local temp path, so that was not it either.
+2. *Permissions.* The container runs as uid 10001 and a host directory is owned by the
+   laptop's uid 501, so "other" gets read and execute but not write. `chmod 777` made one
+   run pass, and a 0755 directory then made another pass. It was never the permissions.
+
+**What it actually was.** Docker Desktop's host file-sharing layer. Same image, same
+command, changing only where `/data` came from:
+
+| where `/data` comes from | result |
+| --- | --- |
+| bind mount, repository folder | 1 of 5 migrated |
+| bind mount, local temp path | 2 of 5 migrated |
+| Docker-managed named volume | **6 of 6 migrated** |
+
+The clue that settled it: `accessSync('/data', W_OK)` succeeded while SQLite still could
+not create a file in the directory. A directory that is stat-able, searchable and reported
+writable, yet rejects `open()` for creation, is not a permission problem. It is a broken
+filesystem view.
+
+**The fix is the smaller change, not the larger one.** Two lines in `docker-compose.yml`
+replacing two bind mounts with two named volumes. There is no host path to create, own or
+`chown`, so the whole failure class is gone rather than documented around. Acceptance
+criteria 3, 4, 10 and 17 and the exit test were updated, because they named `./data` and
+the data is no longer there. The database is still a plain SQLite file —
+`docker compose cp pdm:/data/pdm.db ./copy.db` opens it in any client, verified.
+
+**The lesson, and it is the third time this has happened in this project:** a green test
+run is evidence about the state you ran it in, and I had twice reported a green Docker
+setup that failed on the next fresh run. Measure the operation you are about to document,
+repeatedly, in the state the owner will actually be in. A single passing run proves
+nothing about an intermittent fault — it is exactly what an intermittent fault looks like
+when you are lucky. `pnpm test` is deterministic; `docker compose up` on this machine was
+not, and only repeated runs said so.
+
+Also fixed here: three violations of the `nowMs()`-only rule (`Date.now()` twice in
+`/health`, `new Date()` in the backup filename), and criterion 11, which was not met — the
+web app had never made a single API call and `App.tsx` claimed otherwise in a comment.
+
 ---
 
 ## Open threads
 
 Things a future session should not have to rediscover. Checked and ticked when done.
 
-- [ ] **No application code exists.** 0.1.0 is the next thing to build, and its spec is
-      already written at `docs/RELEASES/v0.1.0.md`. **It starts on
-      `feature/0.1.0-foundation`, not on `main`.**
-- [ ] **`onlyBuiltDependencies` must be added to the root `package.json` before the first
-      `pnpm install`**, or `better-sqlite3` will fail at the first query. See the gotcha above.
+- [x] **0.1.0 application code exists on `feature/0.1.0-foundation`, still uncommitted.**
+      The spec is `docs/RELEASES/v0.1.0.md`; its status row is still `not started` and needs
+      updating. Still outstanding for the release: CI workflow, `.env.example` and README
+      operations, a container-reachability integration test, digest-pinning the base image,
+      and live health rendering in the web shell. **Not yet merged to `main`, and not tagged.**
+- [x] **`better-sqlite3` builds correctly**: `onlyBuiltDependencies` and `allowBuilds` are set
+      in `pnpm-workspace.yaml` (pnpm 11 ignores a `pnpm` field in `package.json`). Note the
+      docs still describe the old `package.json` form in places.
 - [ ] **Eight open questions** (`OQ-1`…`OQ-8` in `docs/ROADMAP.md` §9) all have stated
       defaults so nothing is blocked. The two worth an answer when convenient: `OQ-1`, is
       MCP in scope for 1.0.0; `OQ-5`, the real office timesheet text format.

@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * `darkMode: 'media'` in the Tailwind config is what satisfies UI-09: the
+ * themes follow the OS preference with no stored choice and no flash of the
+ * wrong theme, because the browser applies `prefers-color-scheme` before
+ * first paint.
+ *
+ * The `color-scheme` meta tag in index.html tells the browser to style native
+ * controls and scrollbars to match.
+ */
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Respect a reduced-motion preference. Motion is decoration here, never
+   information, so removing it costs nothing (UI-12). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
