@@ -94,3 +94,50 @@ What we accept as a cost:
   skip, and record is the 293-line problem ADR 0009 removed.
 - **`drizzle-kit` as the migration author.** Still rejected on ADR 0009's grounds:
   the migration author becomes a schema object, which `NFR-MAINT-02` refuses.
+## Addendum, 2026-09-29: one migration, and no upgrade path
+
+This ADR says `knex_migrations` is the only ledger, and that a parallel
+`schema_migrations` table would be two sources of truth. On a **fresh** database
+that is true. On a database **upgraded** from 0.1.0 it was not: the 0.1.0
+`schema_migrations` table survived, with its four rows, because nothing read it
+and therefore nothing removed it.
+
+Two things came out of finding that.
+
+**The three migrations became one.** `0001_settings`, `0002_data_model` and
+`0003_invariants` are now `0001_initial_schema`, containing the same DDL. The
+trigger was stale numbering left by the renumbering above: each file's own
+comment opened `-- 0002:`, `-- 0003:` or `-- 0004:` while its filename said
+`0001`, `0002`, `0003`. Nobody had opened the files since. One file cannot carry
+a stale version number, and the migrator container now either produces a
+complete database or changes nothing at all.
+
+The consolidation is verified rather than assumed: a test reads the real
+`sqlite_master` after migrating and asserts 15 user-data tables, 14 no-delete
+triggers and 30 indexes, so a migration that quietly lost a table or a trigger
+fails instead of shipping.
+
+**0.2.0 does not upgrade a 0.1.0 data directory.** The owner's call, 2026-09-29:
+nothing is released, the database held one archived probe row and seven seeded
+settings, and recreating it was cheaper than supporting a migration path that
+would be exercised exactly once. A 0.1.0 `data/` directory is discarded and
+rebuilt, not migrated. **The next migration to be added is `0002`.**
+
+What this costs, stated plainly: a future release that *does* need to move an
+existing database has no upgrade path, and the first release that needs one
+writes it against real data on the owner's laptop. That is the trade the owner
+made knowingly, which is why it is written down rather than left implicit in a
+deleted file.
+
+What this cost already, and is worth remembering: a clean run is not an upgrade.
+Every test in the suite migrates an empty file, and the three integration tests
+in `migrate.int.test.ts` are about the migrator's exit code on a clean run. The
+upgrade path was untested because there was no test for it, and the release spec
+claimed it had been "verified against a real data directory" when it had not been
+run at all. Both the claim and the gap are recorded because the same release also
+shipped a hand-written count that was wrong twice.
+
+The migrator's own contract is verified end to end, on a deliberately broken
+migration: the file is named, the SQL error is given, the pre-migration backup is
+named and restored, the partial schema is rolled back, the exit code is 1, and
+`pdm` does not start because compose waits on `service_completed_successfully`.

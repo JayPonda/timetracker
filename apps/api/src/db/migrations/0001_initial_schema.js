@@ -1,13 +1,58 @@
-// Migration 0002_data_model.
+// Migration 0001_initial_schema.
 //
-// The DDL below is the reviewed hand-written SQL, preserved byte-for-byte;
-// it is executed inside a native better-sqlite3 transaction so a failure
-// rolls back the whole migration and leaves no half schema (DATA-10). The
-// down migration is deliberately unsupported: PDM never drops a schema
-// object, any more than it deletes a row.
+// The whole schema in one file, so `migrate` on the migrator container is one
+// step that either produces a complete database or changes nothing at all.
+//
+// The DDL is executed inside a native better-sqlite3 transaction, so a failure
+// rolls the whole thing back and leaves no half schema (DATA-10). The down
+// migration is deliberately unsupported: PDM never drops a schema object, any
+// more than it deletes a row.
+//
+// This file is the schema as of 0.2.0, which is the point of 0.2.0. The SRS says
+// the schema is written once here so no later release needs a breaking migration,
+// and the next migration to be added is 0002. The three files that preceded this
+// one (0001_settings, 0002_data_model, 0003_invariants) were consolidated on
+// 2026-09-29; they carried version numbers from before the ADR 0012 renumbering
+// that no longer matched their own filenames, and nothing in 0.2.0 is released
+// yet, so the fix was to write it once rather than to migrate past it.
+//
+// The comments below are the "why" of each table and constraint, and most of
+// them name the requirement they serve. They are not decoration: a column whose
+// reason is only in a document is a column the next person deletes.
 
 const SQL = `
--- 0003: the data model. Every table of SRS §9.1, in one migration.
+-- settings: key/value settings, created with their defaults.
+--
+-- Built in 0.1.0 even though no settings screen exists yet, because every later
+-- release reads settings and the Settings screen should not need a migration of
+-- its own. Writing the defaults here rather than as lazy fallbacks scattered
+-- through the code keeps one code path for reading a setting.
+--
+-- \`settings\` is a user-data table, so it carries \`uid\` and \`archived_at\` from
+-- its first migration (AGENTS.md ground rule 8, DATA-13) and is protected by a
+-- BEFORE DELETE trigger. \`uid\` is meaningless for a key/value row, which is the
+-- one exemption in the ADR, and the key remains the primary key.
+CREATE TABLE IF NOT EXISTS settings (
+  key         TEXT    PRIMARY KEY,
+  value       TEXT    NOT NULL,
+  uid         TEXT    NOT NULL UNIQUE,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  archived_at INTEGER NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_settings_archived
+  ON settings (archived_at);
+
+-- No hard delete of user data, whatever the application code does (DATA-10).
+CREATE TRIGGER IF NOT EXISTS trg_settings_no_delete
+BEFORE DELETE ON settings
+BEGIN
+  SELECT RAISE(ABORT, 'settings rows are archived, never deleted (DATA-10)');
+END;
+
+
+-- the data model. Every table of SRS 9.1, in one migration.
 --
 -- The schema is written once, here, so that no later release needs a breaking
 -- migration (docs/ROADMAP.md v0.2.0: "Schema churn is cheapest now"). A column
@@ -283,9 +328,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_tags_name_live
 --------------------------------------------------------------------------------
 -- time_entry_tags
 --------------------------------------------------------------------------------
--- Many-to-many. No uid: it is a pure join with no independent identity, and it
--- is one of the 5 tables exempt from the no-delete trigger for the same reason
--- (ADR 0002).
+-- Many-to-many. No uid and no archived_at: it is a pure join with no
+-- independent identity, and it is the one user-data table exempt from the
+-- no-delete trigger for the same reason (ADR 0002).
 CREATE TABLE IF NOT EXISTS time_entry_tags (
   time_entry_id INTEGER NOT NULL REFERENCES time_entries (id),
   tag_id        INTEGER NOT NULL REFERENCES tags (id),
@@ -397,7 +442,142 @@ CREATE TABLE IF NOT EXISTS activity_log (
 CREATE INDEX IF NOT EXISTS idx_activity_log_entity ON activity_log (entity, entity_id, at);
 CREATE INDEX IF NOT EXISTS idx_activity_log_at     ON activity_log (at);
 
-`;
+
+-- the invariants the schema alone can enforce.
+--
+-- Everything here is a constraint rather than application code, and that is the
+-- whole point. A rule enforced in a service can be bypassed by the next service
+-- someone writes; a rule enforced in the database cannot be bypassed by any
+-- process that opens the file, including a migration, a CLI, or a bug (ground
+-- rule: "Database invariants enforced by the schema itself").
+--
+-- Each trigger is named after the requirement it serves, so a failure message
+-- names the rule that was broken instead of "constraint failed".
+
+--------------------------------------------------------------------------------
+-- DATA-10: no hard delete of user data.
+--
+-- Thirteen tables. A \`BEFORE DELETE\` trigger on each one, so a DELETE is
+-- refused by the database even if the application tries it. There is no
+-- \`ON DELETE CASCADE\` anywhere in this schema, because a cascade is a delete
+-- that these triggers cannot intercept (ADR 0002).
+--
+-- The list is enumerated by a test that asserts on the count, so a table added
+-- in a later release without a trigger fails the build rather than shipping a
+-- hole in the no-delete guarantee.
+--
+-- Exempt, and deliberately: settings is not in this list because it was given
+-- its own trigger in 0002 — it is user data and it is protected, just earlier.
+-- The derived and system tables (search_documents and its FTS5 index,
+-- reminder_deliveries, mcp_tokens, mcp_audit_log) are not user data and may be
+-- deleted; only the first of those exists so far. The many-to-many
+-- \`time_entry_tags\` has no independent identity and is exempt by ADR.
+
+CREATE TRIGGER IF NOT EXISTS trg_projects_no_delete
+BEFORE DELETE ON projects
+BEGIN
+  SELECT RAISE(ABORT, 'projects are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_tasks_no_delete
+BEFORE DELETE ON tasks
+BEGIN
+  SELECT RAISE(ABORT, 'tasks are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_task_links_no_delete
+BEFORE DELETE ON task_links
+BEGIN
+  SELECT RAISE(ABORT, 'task links are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_todos_no_delete
+BEFORE DELETE ON todos
+BEGIN
+  SELECT RAISE(ABORT, 'todos are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_acceptance_criteria_no_delete
+BEFORE DELETE ON acceptance_criteria
+BEGIN
+  SELECT RAISE(ABORT, 'acceptance criteria are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_closure_records_no_delete
+BEFORE DELETE ON closure_records
+BEGIN
+  SELECT RAISE(ABORT, 'closure records are appended, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_closure_criterion_results_no_delete
+BEFORE DELETE ON closure_criterion_results
+BEGIN
+  SELECT RAISE(ABORT, 'closure criterion results are appended, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_time_entries_no_delete
+BEFORE DELETE ON time_entries
+BEGIN
+  SELECT RAISE(ABORT, 'time entries are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_tags_no_delete
+BEFORE DELETE ON tags
+BEGIN
+  SELECT RAISE(ABORT, 'tags are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_reference_materials_no_delete
+BEFORE DELETE ON reference_materials
+BEGIN
+  SELECT RAISE(ABORT, 'reference materials are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_calendar_events_no_delete
+BEFORE DELETE ON calendar_events
+BEGIN
+  SELECT RAISE(ABORT, 'calendar events are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_reminders_no_delete
+BEFORE DELETE ON reminders
+BEGIN
+  SELECT RAISE(ABORT, 'reminders are archived, never deleted (DATA-10)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_activity_log_no_delete
+BEFORE DELETE ON activity_log
+BEGIN
+  SELECT RAISE(ABORT, 'activity log entries are appended, never deleted (DATA-10)');
+END;
+
+--------------------------------------------------------------------------------
+-- DATA-01 / BR-04: at most 3 links per task.
+--
+-- Enforced here as well as in the service, and the reason is in the acceptance
+-- criteria: a direct SQL insert of a 4th link must be rejected by the database.
+-- The service exists to give the owner a clear message; this exists so the rule
+-- is true regardless of who is writing.
+--
+-- The count is of live links, so archiving a link frees a slot. That is the
+-- point of archive: it is reversible, and a removed link can come back.
+CREATE TRIGGER IF NOT EXISTS trg_task_links_max_three
+BEFORE INSERT ON task_links
+WHEN (SELECT count(*) FROM task_links
+       WHERE task_id = NEW.task_id AND archived_at IS NULL) >= 3
+BEGIN
+  SELECT RAISE(ABORT, 'a task may have at most 3 links (DATA-01, BR-04)');
+END;
+
+--------------------------------------------------------------------------------
+-- BR-13: archive is a state, not an erasure, and it is reversible.
+--
+-- There is nothing to enforce here beyond what the triggers above already do:
+-- archiving sets \`archived_at\` and a row with a non-null \`archived_at\` is still a
+-- row. The one risk worth guarding is an UPDATE that moves \`archived_at\` onto a
+-- row that was never archived, silently un-archiving a deleted-looking entity —
+-- so the service is the only writer of that column, and criterion 3 of the exit
+-- test proves restore works.`;
 
 export async function up(knex) {
   const conn = await knex.client.acquireConnection();

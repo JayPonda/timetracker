@@ -28,15 +28,11 @@ function seedRow(db: ReturnType<typeof openDb>, table: string): void {
   const uid = `seed-${table}`;
 
   const project = db
-    .prepare(
-      `INSERT INTO projects (uid, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-    )
+    .prepare(`INSERT INTO projects (uid, name, created_at, updated_at) VALUES (?, ?, ?, ?)`)
     .run(`${uid}-project`, 'seed project', now, now).lastInsertRowid;
 
   const task = db
-    .prepare(
-      `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-    )
+    .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES (?, ?, ?, ?)`)
     .run(`${uid}-task`, 'seed task', now, now).lastInsertRowid;
 
   const todo = db
@@ -150,7 +146,10 @@ function seedRow(db: ReturnType<typeof openDb>, table: string): void {
  * thing. The file lives in the OS temp directory, never inside the repository.
  */
 async function migrated(): Promise<ReturnType<typeof openDb>> {
-  const dir = join(tmpdir(), `pdm-schema-${String(nowMs())}-${Math.random().toString(36).slice(2)}`);
+  const dir = join(
+    tmpdir(),
+    `pdm-schema-${String(nowMs())}-${Math.random().toString(36).slice(2)}`,
+  );
   const file = join(dir, 'pdm.db');
   const db = openDb({ file });
   await migrate(db, { dbPath: file, backupDir: join(dir, 'backups') });
@@ -178,9 +177,10 @@ describe('DATA-13: every user-data table carries a uid from its first migration'
   it.each(USER_DATA_TABLES)('%s has a unique uid column', async (table) => {
     const db = await migrated();
     try {
-      const columns = db
-        .prepare(`PRAGMA table_info(${table})`)
-        .all() as { name: string; notnull: number }[];
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as {
+        name: string;
+        notnull: number;
+      }[];
 
       const uid = columns.find((c) => c.name === 'uid');
       expect(uid, `${table} is missing uid`).toBeDefined();
@@ -193,17 +193,16 @@ describe('DATA-13: every user-data table carries a uid from its first migration'
   it.each(USER_DATA_TABLES)('%s has a non-unique uid rejected', async (table) => {
     const db = await migrated();
     try {
-      const indexes = db
-        .prepare(`PRAGMA index_list(${table})`)
-        .all() as { name: string; unique: number }[];
+      const indexes = db.prepare(`PRAGMA index_list(${table})`).all() as {
+        name: string;
+        unique: number;
+      }[];
 
       // settings is keyed by `key` and carries a uid for traceability; every
       // other table declares `uid ... UNIQUE` inline, which SQLite reports as an
       // auto-index. Both must be unique.
       const hasUniqueUid = db
-        .prepare(
-          `SELECT count(*) AS c FROM pragma_index_list(?) WHERE "unique" = 1`,
-        )
+        .prepare(`SELECT count(*) AS c FROM pragma_index_list(?) WHERE "unique" = 1`)
         .get(table) as { c: number };
       expect(hasUniqueUid.c, `${table} has no unique index`).toBeGreaterThan(0);
       expect(Array.isArray(indexes)).toBe(true);
@@ -245,9 +244,9 @@ describe('DATA-11: user-data tables carry archived_at, so removal is archive', (
       const withoutArchived = tables.filter(
         (t) =>
           !EXEMPT.has(t) &&
-          !(
-            db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]
-          ).some((c) => c.name === 'archived_at'),
+          !(db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).some(
+            (c) => c.name === 'archived_at',
+          ),
       );
 
       expect(withoutArchived).toEqual([]);
@@ -302,9 +301,7 @@ describe('DATA-10: the database refuses a hard delete of user data', () => {
       seedRow(db, table);
 
       expect(db.prepare(`SELECT count(*) AS c FROM ${table}`).get()).toEqual({ c: 1 });
-      expect(() => db.prepare(`DELETE FROM ${table}`).run()).toThrowError(
-        /never deleted/,
-      );
+      expect(() => db.prepare(`DELETE FROM ${table}`).run()).toThrowError(/never deleted/);
       expect(db.prepare(`SELECT count(*) AS c FROM ${table}`).get()).toEqual({ c: 1 });
     } finally {
       db.close();
@@ -334,9 +331,7 @@ describe('DATA-01: a task may have at most 3 links, enforced by the database', (
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       const insertLink = db.prepare(
@@ -345,12 +340,12 @@ describe('DATA-01: a task may have at most 3 links, enforced by the database', (
       );
 
       for (const position of [1, 2, 3]) {
-        expect(() => insertLink.run(`link-${String(position)}`, task, position, now, now)).not.toThrow();
+        expect(() =>
+          insertLink.run(`link-${String(position)}`, task, position, now, now),
+        ).not.toThrow();
       }
 
-      expect(() => insertLink.run('link-4', task, 4, now, now)).toThrowError(
-        /at most 3 links/,
-      );
+      expect(() => insertLink.run('link-4', task, 4, now, now)).toThrowError(/at most 3 links/);
     } finally {
       db.close();
     }
@@ -361,16 +356,15 @@ describe('DATA-01: a task may have at most 3 links, enforced by the database', (
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       const insertLink = db.prepare(
         `INSERT INTO task_links (uid, task_id, label, url, position, created_at, updated_at)
          VALUES (?, ?, 'l', 'http://x', ?, ?, ?)`,
       );
-      for (const position of [1, 2, 3]) insertLink.run(`l${String(position)}`, task, position, now, now);
+      for (const position of [1, 2, 3])
+        insertLink.run(`l${String(position)}`, task, position, now, now);
 
       db.prepare(`UPDATE task_links SET archived_at = ? WHERE position = 3`).run(now);
 
@@ -458,9 +452,7 @@ describe('DATA-02: at most one time entry may be running', () => {
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       const open = db.prepare(
@@ -480,9 +472,7 @@ describe('DATA-02: at most one time entry may be running', () => {
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       const insert = db.prepare(
@@ -511,9 +501,7 @@ describe('DATA-03: a not_fulfilled closure requires a written reason', () => {
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       expect(() =>
@@ -534,9 +522,7 @@ describe('DATA-03: a not_fulfilled closure requires a written reason', () => {
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       expect(() =>
@@ -557,9 +543,7 @@ describe('DATA-03: a not_fulfilled closure requires a written reason', () => {
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       expect(() =>
@@ -582,9 +566,7 @@ describe('FR-TIME-16: an entry cannot end before it starts', () => {
     try {
       const now = nowMs();
       const task = db
-        .prepare(
-          `INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`,
-        )
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
         .run(now, now).lastInsertRowid;
 
       expect(() =>
@@ -656,18 +638,52 @@ describe('DATA-04: no stored total can drift from the entries it summarises', ()
 });
 
 describe('migrations are additive and ordered', () => {
-  it('the data model lands in 0002 and the invariants in 0003', async () => {
-    // `loadMigrations` strips the `NNNN_` prefix, so these are bare names. The
-    // version prefix is asserted in the ordering test below instead, because
-    // "which number" and "which file" are different questions.
-    const names = loadMigrations().map((m) => m.name);
-    expect(names).toContain('settings');
-    expect(names).toContain('data_model');
-    expect(names).toContain('invariants');
+  it('builds the whole schema from a single migration', async () => {
+    // 0.2.0 writes the schema once, so the migrator container is one step that
+    // either produces a complete database or changes nothing. The next migration
+    // to be added is 0002.
+    const migrations = loadMigrations();
+    expect(migrations.map((m) => m.name)).toEqual(['initial_schema']);
+    expect(migrations[0]?.version).toBe(1);
   });
 
-  it('the data model is version 0002 and the invariants 0003, in order', async () => {
+  it('keeps versions contiguous from 0001', async () => {
+    // Not a count: a count fails every time a migration is added, which is how
+    // this test managed to be wrong in both directions before. `assertNoGaps` in
+    // migrate.ts enforces the real rule, and this only has to agree with it.
     const versions = loadMigrations().map((m) => m.version);
-    expect(versions).toEqual([1, 2, 3]);
+    expect(versions).toEqual(versions.map((_v, index) => index + 1));
+  });
+
+  it('carries every table and every no-delete trigger in that one file', async () => {
+    // The consolidation is only honest if the single file really does contain
+    // the schema. A migration that quietly lost a trigger would still pass every
+    // count in this file if the count were hardcoded; reading the real
+    // `sqlite_master` is what makes it mean something.
+    const migrations = loadMigrations();
+    expect(migrations.length).toBe(1);
+
+    const db = await migrated();
+    try {
+      const userTables = (
+        db
+          .prepare(
+            "SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'knex_%'",
+          )
+          .get() as { c: number }
+      ).c;
+      expect(userTables).toBe(15);
+
+      const noDelete = (
+        db
+          .prepare(
+            "SELECT count(*) AS c FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%_no_delete'",
+          )
+          .get() as { c: number }
+      ).c;
+      expect(noDelete).toBe(14);
+    } finally {
+      db.close();
+    }
   });
 });

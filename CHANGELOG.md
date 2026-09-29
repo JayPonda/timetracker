@@ -10,7 +10,51 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+### Changed
+
+- **The three migrations are now one, `0001_initial_schema.js`.** The three files
+  they replace (`0001_settings`, `0002_data_model`, `0003_invariants`) each opened
+  with a version number in a comment — `-- 0002:`, `-- 0003:`, `-- 0004:` — that no
+  longer matched their own filenames after the ADR 0012 renumbering. Nobody had
+  opened them since. One file cannot carry a stale version number, and the migrator
+  container now either produces a complete database or changes nothing at all.
+
+  The DDL is unchanged, and that is verified rather than asserted: all 299
+  executable statements are identical to the three files they replace, and a test
+  reads the real `sqlite_master` after migrating and asserts 15 user-data tables, 14
+  `BEFORE DELETE` triggers and 30 indexes, so a file that quietly lost a table or a
+  trigger fails instead of shipping.
+
+  **The next migration to be added is `0002`.**
+
+### Fixed
+
+- **The migrator is verified end to end, and two claims about it were false.**
+  Building the container and migrating a real data directory — which had never been
+  done — showed the 0.1.0 `schema_migrations` ledger surviving alongside
+  `knex_migrations`, contradicting ADR 0012's claim that the latter is the only
+  ledger. The release spec's statement that the 0.1.0 upgrade path "was verified
+  against a real data directory" had no basis in any test, and every test in the
+  suite migrated an empty file.
+
+  **0.2.0 does not upgrade a 0.1.0 data directory; one is discarded and recreated**
+  (`D-26`). The owner's call, since nothing is released and the database held one
+  archived probe row. The upgrade path was not patched; it was declined.
+
+  What *is* verified, including the failure path: a deliberately broken migration
+  exits 1, names itself and the SQL error, names its backup and restores it, rolls
+  the partial schema back, and `pdm` does not start because compose waits on
+  `service_completed_successfully`.
+
+- **Two tests asserted a hardcoded list of migration names,** so they silently
+  stopped covering migrations added later. They now derive the list from the loader
+  and the ledger.
+
+- **A test asserted the total number of migrations,** which fails every time one is
+  added. It now asserts contiguity, which is the rule that actually holds.
+
 ### Added
+
 
 - **Added** the API foundation layer, the three layers every later service writes
   through. No business entity is served yet; this is the ground they stand on.

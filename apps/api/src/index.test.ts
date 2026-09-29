@@ -39,7 +39,13 @@ describe('DEP-09: the server refuses to run against an un-migrated schema', () =
       expect(error).toBeInstanceOf(SchemaNotReadyError);
       const err = error as SchemaNotReadyError;
       expect(err.pending.length).toBeGreaterThan(0);
-      expect(err.message).toContain('0001_settings');
+      // The message must name every migration that still has to run. Which
+      // migrations those are comes from the ledger rather than from a list
+      // written here, so adding a migration cannot quietly stop this test from
+      // checking that it is named.
+      for (const p of err.pending) {
+        expect(err.message).toContain(`${String(p.version).padStart(4, '0')}_${p.name}`);
+      }
     }
     db.close();
   });

@@ -511,7 +511,7 @@ a thin query builder over the same driver.
 **What changed.** The `.sql` migration files (including `0001_schema_migrations.sql`) are
 gone. Migrations are now `NNNN_name.js` ESM modules embedding the reviewed DDL
 byte-identical to the source SQL (verified with a per-file diff at generation time),
-renumbered to `0001_settings`, `0002_data_model`, `0003_invariants`. Each runs its DDL in
+renumbered, and on 2026-09-29 consolidated into a single `0001_initial_schema` (`D-26`). Each runs its DDL in
 one native better-sqlite3 transaction (`disableTransactions: true` so Knex does not wrap
 it), meaning a failed migration leaves no partial schema *and* no ledger row. `migrate.ts`
 keeps the pre-migration `VACUUM INTO` backup, restore-and-abort naming the file, and the
@@ -530,7 +530,7 @@ explicitly; the trade is written into ADR 0012 so it is never re-made silently.
   first version was sync and `tsc` complained.
 - Knex only `warn`s `migration file "X" failed` and **rethrows the raw SqliteError**, so
   the runner has to track the failing file via its own `state.active` to name the backup.
-- The ledger stores the **filename including `.js`** (`0001_settings.js`), not just the
+- The ledger stores the **filename including `.js`** (`0001_initial_schema.js`), not just the
   slug. Keep `FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.js$/` in sync with the naming.
 - After build, the Docker copy step must **mirror** (`rmSync(to)` before `cpSync`), not
   merge — stale dist files were elsewhere being copied, and since migrations are `.js` now,
@@ -743,6 +743,32 @@ Things a future session should not have to rediscover. Checked and ticked when d
       runs as a non-root user and a fresh host folder will be root-owned.
 - [ ] **No release has been tagged yet.** The first is `v0.1.0`, and the rules are in
       `VERSIONING.md`.
+
+## Lessons from 2026-09-29 (the Docker verification)
+
+- [x] **The image bakes in the migrations, so `docker compose up` alone migrates nothing
+      new.** The container was still on the old migration files after a new one was
+      written, and `/health` reported `pending: 0` and was wrong — the pending count is
+      computed against the container's own migrations directory, so a stale image reports
+      "nothing pending" while the database is out of date. `pending: 0` proves nothing
+      about whether the build is current. **Always `docker compose build` then
+      `docker compose up -d`.**
+- [x] **Never run a probe that writes against the live data volume.** A `DELETE` test
+      inserted `probe-1` into the real `tasks` table, and because the no-delete trigger
+      refused the cleanup, the row stayed. It had to be archived rather than deleted,
+      because the rule that blocked the cleanup is the same rule that says a row is never
+      removed. A probe that cannot run against a temp database should not touch the
+      owner's data at all.
+- [x] **A clean run is not an upgrade.** Every test migrated an empty file, which is why
+      a dead 0.1.0 ledger survived a release whose spec said it was gone. Fixed by
+      deciding not to support the upgrade at all (`D-26`), not by patching it.
+- [x] **The migrator's contract is now verified end to end,** including the failure path:
+      a deliberately broken migration exits 1, names itself and the SQL error, restores
+      its backup, rolls back the partial schema, and `pdm` does not start.
+- [x] **The three migrations are now one, `0001_initial_schema`.** They carried version
+      numbers in their own comments (`-- 0002:`, `-- 0003:`, `-- 0004:`) that no longer
+      matched their filenames after the `D-24` renumbering. Nobody had opened them since.
+      **The next migration is `0002`.**
 
 ## If you remember one thing
 

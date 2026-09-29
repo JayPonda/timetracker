@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../db/connection.js';
+import { loadMigrations } from '../db/migrate.js';
 import { assertSchemaReady } from '../index.js';
 
 /**
@@ -80,9 +81,12 @@ describe('DEP-09: the migrator container succeeds only on a clean migration', ()
     const result = runMigrate(e);
 
     expect(result.code, result.output).toBe(0);
-    expect(result.output).toContain('0001_settings');
-    expect(result.output).toContain('0002_data_model');
-    expect(result.output).toContain('0003_invariants');
+    // Every migration on disk, named. Reading the list from the loader rather
+    // than from a literal here means this test cannot pass by checking two
+    // migrations that happen to match and missing a third that does not.
+    for (const m of loadMigrations()) {
+      expect(result.output).toContain(`${String(m.version).padStart(4, '0')}_${m.name}`);
+    }
   }, 120000);
 
   it('exits 0 on a second run, because it is idempotent', () => {

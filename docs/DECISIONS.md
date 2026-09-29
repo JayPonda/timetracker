@@ -58,6 +58,7 @@ a gap, and each is written up as an ADR or a roadmap finding.
 
 ## How a decision gets changed
 
+| `D-26` | The schema is **one migration, `0001_initial_schema`**, replacing the three files that preceded it (`0001_settings`, `0002_data_model`, `0003_invariants`). **0.2.0 does not upgrade a 0.1.0 data directory**; one is discarded and recreated. | The three files carried version numbers in their own comments (`-- 0002:`, `-- 0003:`, `-- 0004:`) that no longer matched their filenames after the `D-24` renumbering — leftovers nobody had opened. Found on 2026-09-29 while verifying the migrator against a real data directory: the 0.1.0 `schema_migrations` ledger survived the upgrade, so `D-24`'s claim that `knex_migrations` is the *only* ledger held on a fresh database and not on an upgraded one. The owner's call the same day was not to support the upgrade: nothing is released, the database held one archived probe row and seven settings, and a single migration removes the whole class of problem. The consolidation is faithful — 15 tables, 14 no-delete triggers, 30 indexes, no `ON DELETE CASCADE`, all asserted against a real migrated database | [ADR 0012](adr/0012-migration-runner-knex.md) addendum |
 1. Write the new decision here with today's date and the reason.
 2. If it contradicts an existing decision, mark the old row **superseded by** and keep it.
 3. If an ADR governs it, add a new ADR that supersedes the old one, and update
