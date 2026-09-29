@@ -80,8 +80,19 @@ jobs:
       # laptop and has no registry, and NFR-PRIV-01 means there is nothing
       # worth distributing. Pushing would also mean the owner's data layout
       # becoming someone else's problem.
+      # The version is read from the root `package.json`, the single source of
+      # truth (`VERSIONING.md`), and passed both as a build arg and to compose.
+      # On a tag build that is the tag's own version, so a release image cannot
+      # disagree with the tag pointing at it.
+      - name: Resolve version
+        id: version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
       - name: Build image
-        run: docker build --tag pdm:ci .
+        run: docker build --build-arg "PDM_VERSION=${{ steps.version.outputs.value }}" --tag pdm:ci .
 
       # Prove the built image actually starts and migrates, not merely compiles.
       # `docker build` succeeding says nothing about whether the entrypoint
@@ -92,6 +103,16 @@ jobs:
           docker compose up -d --wait
           docker compose ps -a
           curl -fsS "http://127.0.0.1:${PDM_PORT:-8080}/health"
+
+      # The version `/health` reports must be the version that was built. This
+      # is the check that makes the wiring real: before it, `/health` returned a
+      # hardcoded string that stayed `0.1.0` for the rest of the ladder.
+      - name: The built image reports the version it was built from
+        run: |
+          reported="$(curl -fsS "http://127.0.0.1:${PDM_PORT:-8080}/health" \
+            | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")"
+          echo "image reports: $reported"
+          test "$reported" = "${{ steps.version.outputs.value }}"
 
       - name: Logs on failure
         if: failure()

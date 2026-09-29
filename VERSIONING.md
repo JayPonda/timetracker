@@ -11,6 +11,22 @@ The version lives in exactly one place — `version` in the root `package.json` 
 injected into the app, the MCP server, `/health` (`DEP-06`) and the image tags. Nothing
 else contains a version string, so there is nothing to keep in sync by hand.
 
+This is enforced rather than merely intended. `apps/api/src/version.ts` is the only
+reader, resolving in this order:
+
+1. `PDM_VERSION` — a Docker build arg, so a tagged build reports its own tag.
+2. The root `package.json` — read at runtime, so `pnpm dev` and a test agree.
+3. `0.0.0-unknown` — visibly wrong on purpose, so a packaging mistake is noticed
+   rather than believed.
+
+`docker-compose.yml` interpolates `PDM_VERSION` into both the build arg and the
+image tag, so `pdm:0.2.0` and `/health`'s `version` cannot disagree. CI resolves
+`package.json`, passes it to `docker build`, and then **asserts the running
+container reports it** — the check that was missing when `/health` returned a
+hardcoded fallback that would have read `0.1.0` all the way to 0.12.0.
+
+To release: bump `package.json`, tag `v<version>`, and nothing else.
+
 ## What each number means
 
 | Number | Changes when | Example |
@@ -83,9 +99,23 @@ A release never goes backwards. A version is never reused.
 4. The owner has run the exit test and it passed, and the date is written into the spec.
 5. `CHANGELOG.md` moves the entries from **Unreleased** to `## [X.Y.Z]`, dated.
 6. `docs/PLAN.md` points at the next release.
-7. `package.json` version is bumped.
+7. `package.json` version is bumped. **This is the only edit.** Nothing else carries a
+   version string (see the top of this file).
 8. Merge to `main`, then `git tag -a vX.Y.Z -m "X.Y.Z — name"` and push the tag.
-9. Build and push the image tagged `X.Y.Z` and `latest`.
+9. Build the image from the merged `main`, which carries the bumped `package.json`:
+
+   ```bash
+   docker compose build
+   docker tag pdm:X.Y.Z pdm:latest
+   ```
+
+   There is no registry to push to; the app runs on one laptop (`NFR-PRIV-01`).
+   To confirm the image reports the release it came from, read it back:
+
+   ```bash
+   docker compose up -d --wait
+   curl -fsS http://127.0.0.1:8080/health | grep -o '"version":"[^"]*"'
+   ```
 
 **A release is cut only from `main`, never from a feature branch.** The work happens on
 `feature/<version>-<short-description>`, is squash-merged once its tests are green, and the
