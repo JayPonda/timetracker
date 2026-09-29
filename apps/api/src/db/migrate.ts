@@ -264,8 +264,8 @@ function describeFailure(cause: unknown, state: { active?: MigrationFile; lastBa
 
   const where = backupPath
     ? `The pre-migration backup is at ${backupPath}${
-        restorePath ? ' and has been restored over the database.' : `; restore it with: pnpm --filter api restore ${backupPath}`
-      }`
+      restorePath ? ' and has been restored over the database.' : `; restore it with: pnpm --filter api restore ${backupPath}`
+    }`
     : 'No pre-migration backup was taken for this run.';
 
   return new MigrationError(

@@ -80,23 +80,34 @@ both `environment:` blocks in `docker-compose.yml`, and verify with
 `docker compose config | grep VAR`. Done for `LOG_LEVEL`; the other variables were already
 listed.
 
-### Prettier disagrees with the repository as committed, and that is not a gate
+### Prettier was removed, because it cost more to review than it was worth
 
-`pnpm format:check` fails on **53 files on a clean `HEAD`** — 44 of them files I have never
-touched, including `.prettierrc.json`, `tsconfig.base.json` and `VERSIONING.md`. Verified by
-extracting the committed blobs to a temp directory and running `prettier --check` on them: they
-fail there too, so the state predates this session.
+On 2026-09-29 the owner asked to drop Prettier after watching it reflow 305 lines of
+`ROADMAP.md` tables around a one-line edit and reformat a test file a change had never
+touched. `prettier`, `eslint-config-prettier`, `.prettierrc.json`, `.prettierignore` and the
+`format` / `format:check` scripts are gone. `@stylistic/eslint-plugin` now enforces the style
+inside `eslint.config.js`, so `pnpm lint` is the linter and the formatter check in one command
+and `pnpm lint:fix` is the formatter.
 
-**Consequence: do not run `pnpm format` at the root as a "fix".** It would reformat 53 files and
-bury the dozen that are actually mine in a diff nobody can review, which is exactly the wrong
-outcome for a change that is supposed to be about a release's foundation. I formatted only the
-files I created — `lib/`, `middleware/`, `routes/`, `services/`, `server.ts`, `test/helpers.ts`,
-`uid.ts`, `vitest.config.ts` — and verified they are clean.
+**The 53-file problem dissolved, and that is the evidence the decision was right.** Those 53
+failures were overwhelmingly *markdown* — tables, and files like `VERSIONING.md` that ESLint
+does not lint at all. The first `@stylistic` rule set I wrote reported **204** errors, and 197 of
+them were my own two rules disagreeing with the deliberate house style: interfaces here are
+written `field: Type;` and I had asked for no delimiter, and the "single quotes" rule was
+complaining about multi-line template literals that have no other spelling. Both rules were
+wrong, not the 197 lines. Correcting the config to match the code left **7** real problems, all
+of them genuine — 5 missing trailing newlines and 2 wrong indentation inside a template literal
+in `migrate.ts` — fixed in 4 lines.
 
-**This is worth raising with the owner**, because it means one of the two is wrong: either
-`format:check` is not a gate and the DoD should stop implying it is, or the repository was never
-formatted and someone should run it once as a dedicated `chore/format` commit before the history
-grows. Neither is a 0.2.0 blocker. `pnpm lint` is the gate, and it is green.
+**The lesson generalises beyond formatting, and it is the one worth keeping.** A rule that
+disagrees with 170 lines of deliberate code is a rule to delete, not a codebase to reformat. The
+cheap test is to write the rule, run it, and read the *breakdown by rule* before reaching for
+`--fix`. Had I run `lint:fix` on the first config I would have committed a 197-line whitespace
+commit and called it tidying. Read the histogram; the 170 was one config mistake, not 170
+mistakes.
+
+**Do not reintroduce a second formatter.** Two formatters is how the noise came back: each
+rewrites what the other touched. If a style needs enforcing, it goes in `eslint.config.js`.
 
 ### `pnpm test:coverage` was never wired up, and the version matters
 

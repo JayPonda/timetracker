@@ -10,7 +10,34 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+### Removed
+
+- **Prettier, and with it a `.prettierrc` and two scripts.** Formatting is now
+  `@stylistic/eslint-plugin` inside `eslint.config.js`, so `pnpm lint` is the
+  linter and the style check in one command and `pnpm lint:fix` is the formatter.
+
+  Prettier was removed because it was producing noise rather than consistency:
+  `prettier --write` reflowed every table in `ROADMAP.md` — 305 changed lines
+  around a one-line edit — and reformatted a test file a change had never
+  touched. A formatter that rewrites files nobody edited costs more to review
+  than the consistency it returns, and its own `format:check` was already failing
+  on 53 files, so the gate it fed was not a gate.
+
 ### Changed
+
+- **ESLint now enforces the house style instead of a second tool disabling it.**
+  2-space indent, single quotes, semicolons, trailing commas, as Part 10 of
+  `AGENTS.md` already described.
+
+  The 53-file problem disappeared rather than being fixed, and that is the
+  evidence: those failures were overwhelmingly markdown, which ESLint does not
+  lint. The first rule set reported 204 errors, of which 197 were two of my own
+  rules disagreeing with the deliberate existing style — interfaces here are
+  written `field: Type;`, and the quotes rule was objecting to multi-line
+  template literals. Both rules were changed to match the code, leaving 7 real
+  problems fixed in 4 lines: 5 missing trailing newlines and 2 wrong indentation
+  inside a template literal.
+
 
 - **The three migrations are now one, `0001_initial_schema.js`.** The three files
   they replace (`0001_settings`, `0002_data_model`, `0003_invariants`) each opened

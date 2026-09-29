@@ -307,7 +307,6 @@ pnpm dev                      # migrate, then API and web dev servers
 pnpm build                    # build all workspaces
 pnpm lint                     # ESLint
 pnpm lint:fix                 # ESLint with autofix
-pnpm format                   # Prettier write
 pnpm typecheck                # tsc --noEmit across workspaces
 
 # Tests
@@ -602,8 +601,11 @@ the release that must first write it. That list, not a coverage number, is the q
 ## Part 10 — Style
 
 - TypeScript strict mode everywhere. No `any` without a comment saying why.
-- Server: 2-space indent, single quotes, semicolons, trailing commas. Prettier is the
-  authority; do not argue with it.
+- Server: 2-space indent, single quotes, semicolons, trailing commas. **ESLint is the
+  authority** (`@stylistic` in `eslint.config.js`); do not argue with it. Prettier was
+  removed on 2026-09-29 because it produced noise rather than consistency: it reflowed
+  every table in `ROADMAP.md` — 305 changed lines around a one-line edit — and
+  reformatted files a change had never touched. `pnpm lint:fix` is the formatter.
 - Named exports, not default exports, except React components.
 - Comments explain **why**, never **what**. No commented-out code.
 - No emojis in source. Plain language in the interface — Task, Todo, Acceptance criteria,
@@ -675,5 +677,6 @@ would create two places to keep in sync — the exact problem `DATA-04` exists t
 
 | Date | Change |
 | --- | --- |
+| 2026-09-29 | Removed Prettier; `@stylistic` inside ESLint does the formatting. Triggered by watching `prettier --write` reflow 305 lines of `ROADMAP.md` and reformat a test file nobody had edited. `pnpm lint:fix` replaces `pnpm format`. |
 | 2026-09-28 | Rewritten in full, from the beginning, as the project constitution. Standardised on pnpm (was inconsistently documented as npm in ADR 0001). |
 | 2026-09-29 | Added ground rule 12, the one logger, and recorded why the browser reads `VITE_LOG_LEVEL` while the API reads `LOG_LEVEL`. Triggered by adding the logger and finding that an unprefixed name in a Vite bundle is `undefined` by construction — it looks configured and logs at the default. |
