@@ -86,8 +86,15 @@ export function changedFields(
     // Both sides are populated, including for a key that exists in only one of
     // them. A field that appeared or vanished is the most interesting kind of
     // change, and storing `null` on the missing side says exactly that.
-    if (key in before) changedBefore[key] = before[key];
-    if (key in after) changedAfter[key] = after[key];
+    //
+    // The `null` is assigned rather than the key left out. Omitting it
+    // serialises as `{}`, and a diff reading `{"project_id": 5}` to `{}` cannot be
+    // told apart from "no change", so the one row that records a field being
+    // cleared is indistinguishable from a row that records nothing at all. This
+    // also keeps the `diff.after === null` check below meaningful: an update
+    // whose entire after-state is empty still has to count as a change.
+    changedBefore[key] = key in before ? before[key] : null;
+    changedAfter[key] = key in after ? after[key] : null;
     count += 1;
   }
 

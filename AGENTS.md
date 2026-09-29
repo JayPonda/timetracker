@@ -118,8 +118,11 @@ No `delete*` function. No `DELETE` route. No `db.delete()`. No Delete button in 
 `ON DELETE CASCADE` anywhere. Removal sets `archived_at` through an `archive*` service
 function that also writes `activity_log`.
 
-The database additionally blocks hard deletes with `BEFORE DELETE` triggers on the 13
-user-data tables, so a bug cannot erase data either.
+The database additionally blocks hard deletes with `BEFORE DELETE` triggers on 14 of the
+15 user-data tables, so a bug cannot erase data either. The exemption is `time_entry_tags`,
+a pure join with no independent identity, plus the `knex_migrations*` ledger, which is not
+user data. Measured against a migrated database on 2026-09-29; this line said "13" until
+then, and the count in `schema.test.ts` was right while the prose was wrong.
 
 `DATA-09`, `DATA-10`, `BR-13`. Full reasoning and the exemption list:
 `docs/adr/0002-no-delete-and-archival.md`.
@@ -425,7 +428,7 @@ These are not application logic; they are constraints, so no bug can violate the
 | --- | --- | --- |
 | At most one running timer | `CREATE UNIQUE INDEX ... ON time_entries((1)) WHERE ended_at IS NULL` | `DATA-02` |
 | At most 3 links per task | `BEFORE INSERT` trigger on `task_links` | `DATA-01`, `BR-04` |
-| No hard delete of user data | `BEFORE DELETE` trigger on 13 tables | `DATA-10` |
+| No hard delete of user data | `BEFORE DELETE` trigger on 14 of 15 tables | `DATA-10` |
 | No cascading delete | No `ON DELETE CASCADE` anywhere, `foreign_keys=ON` | `DATA-10` |
 | A reminder occurrence is delivered once | `UNIQUE (reminder_id, occurrence_at)` on the delivery ledger | `FR-REM-10` |
 | An ended task has a closure record | Enforced in the close service, in one transaction | `DATA-03` |
@@ -467,7 +470,7 @@ breaking migration. This is the agreed shape, not yet created.
 | `closure_criterion_results` | Snapshot of each criterion at closure | Text is copied, not referenced, so history stays truthful |
 | `time_entries` | One span of tracked time | One open row at a time; archived, never deleted |
 | `tags` | Labels on entries | Unique name; archived, never deleted |
-| `time_entry_tags` | Many-to-many | |
+| `time_entry_tags` | Many-to-many | **No `uid`, no `archived_at`, no delete trigger** — a pure join with no independent identity |
 | `reference_materials` | Notes, links, snippets, lessons, decisions | Kept after a task ends |
 | `calendar_events` | Events | Repeats expanded when displayed |
 | `reminders` | "Remind me at", plus per-event reminders | |
@@ -476,10 +479,13 @@ breaking migration. This is the agreed shape, not yet created.
 
 Derived and system tables, exempt from the no-delete triggers: `knex_migrations`,
 `knex_migrations_lock`, `search_documents` and its FTS5 index, `reminder_deliveries`,
-`mcp_tokens`, `mcp_audit_log`.
+`mcp_tokens`, `mcp_audit_log`. Only the first two exist today; the rest arrive with
+search (0.8.0), reminders (0.7.0) and the MCP server (0.10.0).
 
-Every user-data table carries `uid TEXT NOT NULL UNIQUE` and `archived_at INTEGER NULL`,
-plus `created_at` and `updated_at` as epoch milliseconds.
+Of the 15 user-data tables, **14 carry `uid TEXT NOT NULL UNIQUE`** (`time_entry_tags` is
+exempt) and **13 carry `archived_at`** (`time_entry_tags` and `activity_log` are exempt;
+an append-only log that could be archived is a log that could be hidden). Every table
+also carries `created_at` and `updated_at` as epoch milliseconds.
 
 ---
 

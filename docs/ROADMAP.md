@@ -221,14 +221,15 @@ preserved input (`UI-08`); API capability classification in place for MCP.
 
 1. Adding a 4th link to a task returns 422 with a clear message, and a direct SQL insert
    of a 4th link is rejected by a database trigger (`DATA-01`, `US-06`).
-2. Every one of the 13 user-data tables refuses `DELETE` at the database level, proven by
+2. Every user-data table but one refuses `DELETE` at the database level, proven by
    a test that enumerates all of them (`DATA-10`).
 3. Archiving a project hides it and its tasks from pickers and default lists, keeps all
    data, and restoring brings everything back (`FR-PRJ-04`, `BR-16`, `US-07`).
 4. Archiving a tag hides it from pickers but leaves existing entries and per-tag totals
    unchanged (`FR-TAG-05`).
-5. Archiving a todo keeps its time entries linked to it — verified once entries exist in
-   0.3.0 and asserted here against the foreign key (`DATA-05`, `FR-PHASE-05`).
+5. Archiving a todo keeps its time entries linked to it, and does not archive the entry
+   with it — asserted in `schema.test.ts`, and verified again through the API in 0.3.0
+   (`DATA-05`, `FR-PHASE-05`).
 6. Editing an Ended task is allowed and the change is recorded in history
    (`FR-TASK-12`, `FR-STAT-05`).
 7. No API route accepts a delete of user data; a test scans the route table

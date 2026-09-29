@@ -381,6 +381,77 @@ describe('DATA-01: a task may have at most 3 links, enforced by the database', (
   });
 });
 
+describe('DATA-05: archiving a todo keeps the time tracked against it', () => {
+  it('the entry survives and stays linked to the archived todo', async () => {
+    // The rule is that archiving is not deleting. If archiving a phase dropped or
+    // unlinked the hours recorded against it, a todo that was archived at the end
+    // of a day would take an afternoon of work with it — and the entry would look
+    // like it had never happened rather than like something went wrong.
+    const db = await migrated();
+    try {
+      const now = nowMs();
+      const task = db
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
+        .run(now, now).lastInsertRowid;
+      const todo = db
+        .prepare(
+          `INSERT INTO todos (uid, task_id, title, created_at, updated_at) VALUES ('td1', ?, 'x', ?, ?)`,
+        )
+        .run(task, now, now).lastInsertRowid;
+      db.prepare(
+        `INSERT INTO time_entries (uid, task_id, todo_id, started_at, ended_at, source, created_at, updated_at)
+         VALUES ('e1', ?, ?, ?, ?, 'manual', ?, ?)`,
+      ).run(task, todo, now, now + 1_000, now, now);
+
+      db.prepare(`UPDATE todos SET archived_at = ? WHERE id = ?`).run(now + 2_000, todo);
+
+      const entry = db
+        .prepare(`SELECT task_id, todo_id, started_at, ended_at FROM time_entries WHERE uid = 'e1'`)
+        .get() as { task_id: number; todo_id: number; started_at: number; ended_at: number };
+      expect(entry).toEqual({
+        task_id: task,
+        todo_id: todo,
+        started_at: now,
+        ended_at: now + 1_000,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('the entry itself is not archived, because it is not the thing that was removed', async () => {
+    // Archiving a todo hides the todo. The hours belong to the task and stay in
+    // the day's total; silently archiving them would be a stored number quietly
+    // changing (DATA-04), and DATA-12 exists precisely because excluded time must
+    // be shown rather than hidden.
+    const db = await migrated();
+    try {
+      const now = nowMs();
+      const task = db
+        .prepare(`INSERT INTO tasks (uid, name, created_at, updated_at) VALUES ('t1', 'a', ?, ?)`)
+        .run(now, now).lastInsertRowid;
+      const todo = db
+        .prepare(
+          `INSERT INTO todos (uid, task_id, title, created_at, updated_at) VALUES ('td1', ?, 'x', ?, ?)`,
+        )
+        .run(task, now, now).lastInsertRowid;
+      db.prepare(
+        `INSERT INTO time_entries (uid, task_id, todo_id, started_at, ended_at, source, created_at, updated_at)
+         VALUES ('e1', ?, ?, ?, ?, 'manual', ?, ?)`,
+      ).run(task, todo, now, now + 1_000, now, now);
+
+      db.prepare(`UPDATE todos SET archived_at = ? WHERE id = ?`).run(now + 2_000, todo);
+
+      const archived = db
+        .prepare(`SELECT archived_at FROM time_entries WHERE uid = 'e1'`)
+        .get() as { archived_at: number | null };
+      expect(archived.archived_at).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe('DATA-02: at most one time entry may be running', () => {
   it('a second open entry is refused by the partial unique index', async () => {
     const db = await migrated();

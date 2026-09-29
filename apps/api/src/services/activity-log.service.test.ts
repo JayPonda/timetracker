@@ -42,9 +42,29 @@ describe('criterion 13: the activity log records what changed, not the whole row
   it('records a field that disappeared, as null on the after side', () => {
     // A field that vanished is among the most interesting changes, and storing
     // null on the missing side says exactly that.
+    //
+    // The assertion is `null` and not `undefined` on purpose. `toEqual` treats a
+    // missing key and an explicit `undefined` as equal, so an `undefined`
+    // expectation here passed against code that omitted the key entirely — which
+    // serialises to `{}` and makes the change indistinguishable from no change.
     const diff = changedFields({ name: 'A', estimate_hours: 2 }, { name: 'A' });
     expect(diff.before).toEqual({ estimate_hours: 2 });
-    expect(diff.after).toEqual({ estimate_hours: undefined });
+    expect(diff.after).toEqual({ estimate_hours: null });
+    expect('estimate_hours' in (diff.after as object)).toBe(true);
+  });
+
+  it('records a field that appeared, as null on the before side', () => {
+    const diff = changedFields({ name: 'A' }, { name: 'A', colour: 'red' });
+    expect(diff.before).toEqual({ colour: null });
+    expect(diff.after).toEqual({ colour: 'red' });
+  });
+
+  it('counts a change when the entire after state is empty', () => {
+    // `{}` is a real after-state, not the absence of one. Returning after=null
+    // here would make recordChange skip the row, losing the last trace of the
+    // entity entirely.
+    const diff = changedFields({ name: 'A' }, {});
+    expect(diff.after).toEqual({ name: null });
   });
 
   it('records a field that appeared', () => {
