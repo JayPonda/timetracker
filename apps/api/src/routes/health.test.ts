@@ -187,7 +187,11 @@ describe('DEP-11: the app serves the built frontend from the same process', () =
 
   it('falls back to index.html for a client-side route', async () => {
     const { app: server } = await appWithWeb();
-    const res = await server.inject({ method: 'GET', url: '/tasks/42' });
+    // This must be a path no API route claims: it was `/tasks/42` until the
+    // task routes landed and it became a 403 from the capability guard instead
+    // of the fallback. Claiming this path for an API route means updating this
+    // example, which is the test doing its job.
+    const res = await server.inject({ method: 'GET', url: '/calendar/42' });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('PDM');

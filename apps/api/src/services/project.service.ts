@@ -148,6 +148,12 @@ export function createProjectService(
         if (input.colour !== undefined) patch.colour = input.colour;
 
         const updated = await repository.patch(id, patch, trx);
+        // Unreachable by construction, and covered by no test on purpose: the
+        // row was loaded above in the same transaction, and rows are never
+        // deleted — the `BEFORE DELETE` trigger forbids it (`DATA-10`) — so the
+        // patch always matches. The guard stays because a silent no-op write is
+        // the worst failure a mutation can have.
+        /* v8 ignore next */
         if (!updated) throw notFound(`Project ${id}`);
 
         const after: Project = { ...before, ...patch } as Project;
@@ -183,6 +189,8 @@ export function createProjectService(
 
         const at = nowMs();
         const updated = await repository.patch(id, { archived_at: at, updated_at: at }, trx);
+        // Same unreachable-by-construction guard as in `update` above.
+        /* v8 ignore next */
         if (!updated) throw notFound(`Project ${id}`);
 
         const after: Project = { ...before, archived_at: at, updated_at: at };
@@ -219,6 +227,8 @@ export function createProjectService(
 
         const at = nowMs();
         const updated = await repository.patch(id, { archived_at: null, updated_at: at }, trx);
+        // Same unreachable-by-construction guard as in `update` above.
+        /* v8 ignore next */
         if (!updated) throw notFound(`Project ${id}`);
 
         const after: Project = { ...before, archived_at: null, updated_at: at };

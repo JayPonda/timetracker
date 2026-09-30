@@ -15,9 +15,15 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 - **Projects are usable end to end.** Create, rename, archive and restore projects
   through declared API routes and the `/projects` screen; every write runs in one
   transaction with its activity-log entry. Archived projects stay out of default
-  lists and appear only with “Show archived” on; there is no Delete button. Task
-  buckets, tags, todos, links, criteria and references are still unbuilt, so the
-  release exit test remains blocked.
+  lists and appear only with “Show archived” on; there is no Delete button.
+- **Task core is usable end to end.** Create, edit, move between Open and In
+  progress, archive and restore tasks through declared routes and the `/tasks`
+  screen, with project, status and archive filters, sorting, and the “No project”
+  bucket. `started_at` is stamped on the first move to In progress and never
+  rewritten. `ended` is not writable anywhere in this slice — by type and by
+  test — because only the 0.5.0 closure service may set it. Todos, links,
+  criteria, references and tags are still unbuilt, so the release exit test
+  remains blocked.
 
 ### Removed
 

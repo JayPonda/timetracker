@@ -13,8 +13,10 @@ import { decorateServices } from './middleware/services.js';
 import { registerRequestId } from './middleware/request-id.js';
 import { createActivityLogService } from './services/activity-log.service.js';
 import { createProjectService } from './services/project.service.js';
+import { createTaskService } from './services/task.service.js';
 import { healthRoute } from './routes/health.js';
 import { projectRoutes } from './routes/projects.js';
+import { taskRoutes } from './routes/tasks.js';
 import { registerRoutes, RouteTable, type RouteDeclaration } from './routes/table.js';
 
 export interface CreateServerOptions {
@@ -88,7 +90,11 @@ export function createServer({
   // service would hold a second Knex pool, and the transaction it opened would
   // not be the one the route's other writes joined.
   const activityLog = createActivityLogService(knex);
-  decorateServices(app, { activityLog, projects: createProjectService(knex, activityLog) });
+  decorateServices(app, {
+    activityLog,
+    projects: createProjectService(knex, activityLog),
+    tasks: createTaskService(knex, activityLog),
+  });
   registerRoutes(app, buildRouteTable({ db, config, startedAtMs, extraRoutes }), {
     principalResolver,
   });
@@ -117,7 +123,7 @@ function buildRouteTable(options: {
 }): RouteTable {
   // Each domain contributes its declarations here, so the table keeps one source
   // for production routes and the audit keeps one object to compare against.
-  const base = projectRoutes().reduce<RouteTable>(
+  const base = [...projectRoutes(), ...taskRoutes()].reduce<RouteTable>(
     (table, declaration) => table.declare(declaration),
     new RouteTable().declare(healthRoute(options)),
   );

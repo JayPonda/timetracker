@@ -794,6 +794,19 @@ Things a future session should not have to rediscover. Checked and ticked when d
       but the rebuilt container serving `/projects` still needs one `docker compose
       build && up` verification when the daemon is back.
 
+- [x] **2026-09-30: the task core slice is done.** Repository with the
+      project-aware archive filter, service with status moves and `started_at`,
+      declared routes, `/tasks` screen with the “No project” bucket. Two lessons:
+      a new API route can collide with an existing test's example path
+      (`/tasks/42` in the SPA-fallback test became a 403 — the test now uses an
+      unclaimed path and says so), and dead-by-construction guards
+      (`if (!updated)` after a same-transaction load, where the no-delete trigger
+      makes the row unremovable) get `/* v8 ignore next */` with a why-comment
+      rather than tests that cannot exist. Six of them, three per service.
+- [x] **Docker Desktop is still not running.** The rebuilt container serving
+      `/tasks` still needs one `docker compose build && up` verification when the
+      daemon is back. This is the second slice in a row blocked on it.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard
