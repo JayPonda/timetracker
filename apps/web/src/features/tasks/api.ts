@@ -3,23 +3,28 @@ import {
   errorEnvelopeSchema,
   listCriteriaResponseSchema,
   listProjectsResponseSchema,
+  listReferencesResponseSchema,
   listTaskLinksResponseSchema,
   listTasksResponseSchema,
   listTodosResponseSchema,
+  referenceResponseSchema,
   taskLinkResponseSchema,
   taskResponseSchema,
   todoResponseSchema,
   type CreateCriterionInput,
+  type CreateReferenceInput,
   type CreateTaskInput,
   type CreateTaskLinkInput,
   type CreateTodoInput,
   type Criterion,
   type ListTasksQuery,
   type Project,
+  type Reference,
   type Task,
   type TaskLink,
   type Todo,
   type UpdateCriterionInput,
+  type UpdateReferenceInput,
   type UpdateTaskInput,
   type UpdateTaskLinkInput,
   type UpdateTodoInput,
@@ -181,7 +186,9 @@ export async function restoreTodo(id: number): Promise<Todo> {
 }
 
 export async function fetchTaskLinks(signal: AbortSignal, taskId: number): Promise<TaskLink[]> {
-  const res = await fetch(`/tasks/${taskId}/links`, {
+  // Archived links render in their own subsection, so they are fetched, not
+  // filtered. The subsection is the `DATA-11` opt-in, stated in words.
+  const res = await fetch(`/tasks/${taskId}/links?include_archived=true`, {
     signal,
     headers: { accept: 'application/json' },
   });
@@ -288,4 +295,54 @@ export async function restoreCriterion(id: number): Promise<Criterion> {
     headers: { accept: 'application/json' },
   });
   return readCriterion(res, 'Could not restore the criterion');
+}
+
+export async function fetchReferences(signal: AbortSignal, taskId: number): Promise<Reference[]> {
+  // Archived references render in their own subsection, so they are fetched,
+  // not filtered — the subsection is the `DATA-11` opt-in, stated in words.
+  const res = await fetch(`/tasks/${taskId}/references?include_archived=true`, {
+    signal,
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw await apiError(res, 'Could not load references');
+  return listReferencesResponseSchema.parse(await res.json()).references;
+}
+
+async function readReference(res: Response, fallback: string): Promise<Reference> {
+  if (!res.ok) throw await apiError(res, fallback);
+  return referenceResponseSchema.parse(await res.json()).reference;
+}
+
+export async function createReference(taskId: number, input: CreateReferenceInput): Promise<Reference> {
+  const res = await fetch(`/tasks/${taskId}/references`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readReference(res, 'Could not add the reference');
+}
+
+export async function updateReference(id: number, input: UpdateReferenceInput): Promise<Reference> {
+  const res = await fetch(`/references/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readReference(res, 'Could not update the reference');
+}
+
+export async function archiveReference(id: number): Promise<Reference> {
+  const res = await fetch(`/references/${id}/archive`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readReference(res, 'Could not archive the reference');
+}
+
+export async function restoreReference(id: number): Promise<Reference> {
+  const res = await fetch(`/references/${id}/restore`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readReference(res, 'Could not restore the reference');
 }

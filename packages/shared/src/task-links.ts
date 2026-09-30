@@ -78,5 +78,15 @@ export type TaskLink = z.infer<typeof taskLinkSchema>;
 export type CreateTaskLinkInput = z.infer<typeof createTaskLinkSchema>;
 export type UpdateTaskLinkInput = z.infer<typeof updateTaskLinkSchema>;
 
+/** `GET /tasks/:id/links` query string (`DATA-11`, like every other list). */
+export const listTaskLinksQuerySchema = z.object({
+  include_archived: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+});
+
+export type ListTaskLinksQuery = z.infer<typeof listTaskLinksQuerySchema>;
+
 export const listTaskLinksResponseSchema = z.object({ links: z.array(taskLinkSchema) });
 export const taskLinkResponseSchema = z.object({ link: taskLinkSchema });

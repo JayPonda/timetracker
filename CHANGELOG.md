@@ -38,7 +38,12 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
   criteria section, kept visibly separate from todos: no tick box anywhere near
   a condition. Whether a criterion was met is decided at closure in 0.5.0, never
   here; archiving removes one from later closures without touching past records.
-  References and tags are still unbuilt, so the release exit test remains blocked.
+- **Reference materials are usable end to end.** Add, edit, archive and restore
+  notes, links, snippets, lessons and decisions through declared routes and the
+  detail page's references section, with the kind shown in words. An empty URL
+  field means no URL, never a blank link. Reads check nothing about the task's
+  state and nothing cascades, so a lesson outlives its task by doing nothing.
+  Tags are the last unbuilt domain; the release exit test remains blocked.
 
 ### Removed
 

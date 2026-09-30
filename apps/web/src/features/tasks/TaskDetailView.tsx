@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import type { Task, Todo } from '@pdm/shared';
 import { TaskCriteria, type TaskCriteriaProps } from './TaskCriteria';
 import { TaskLinks, type TaskLinksProps } from './TaskLinks';
+import { TaskReferences, type TaskReferencesProps } from './TaskReferences';
 
 /**
  * The task detail screen, split from its data like every other screen: what
@@ -53,6 +54,7 @@ export interface TaskDetailViewProps {
   readonly actionError: string | null;
   readonly linksProps: TaskLinksProps;
   readonly criteriaProps: TaskCriteriaProps;
+  readonly referencesProps: TaskReferencesProps;
 }
 
 const inputClass =
@@ -92,6 +94,7 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
     actionError,
     linksProps,
     criteriaProps,
+    referencesProps,
   } = props;
 
   if (loading) return <p className="mt-4 text-sm text-neutral-500">Loading the task…</p>;
@@ -384,9 +387,9 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
         <TaskCriteria {...criteriaProps} />
       </div>
 
-      <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">
-        Reference materials join this page later in this release.
-      </p>
+      <div className="mt-6">
+        <TaskReferences {...referencesProps} />
+      </div>
     </div>
   );
 }

@@ -832,6 +832,12 @@ Things a future session should not have to rediscover. Checked and ticked when d
       happens to be a checkbox. Both were the test overreaching, not the code
       misbehaving.
 
+- [x] **2026-09-30: the references slice is done; tags are the last domain.**
+      One decision worth reusing: an empty optional URL field converts to `null`
+      at the page boundary, because a blank string in the URL column is a link
+      to nothing that still renders as a link. `null` means “no URL” and the
+      schema refuses blank, so all three states stay distinct.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

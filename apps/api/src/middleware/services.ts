@@ -5,6 +5,7 @@ import type { TaskService } from '../services/task.service.js';
 import type { TodoService } from '../services/todo.service.js';
 import type { TaskLinkService } from '../services/task-link.service.js';
 import type { CriterionService } from '../services/criterion.service.js';
+import type { ReferenceService } from '../services/reference.service.js';
 
 /**
  * The services, built once and reached through a Fastify decorator.
@@ -22,6 +23,7 @@ export interface Services {
   readonly todos: TodoService;
   readonly taskLinks: TaskLinkService;
   readonly criteria: CriterionService;
+  readonly references: ReferenceService;
 }
 
 declare module 'fastify' {

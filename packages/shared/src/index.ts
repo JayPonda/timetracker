@@ -3,6 +3,7 @@ export * from './clock.js';
 export * from './criteria.js';
 export * from './http.js';
 export * from './projects.js';
+export * from './references.js';
 export * from './task-links.js';
 export * from './tasks.js';
 export * from './time.js';

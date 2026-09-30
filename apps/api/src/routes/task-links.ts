@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   CAPABILITIES,
   createTaskLinkSchema,
+  listTaskLinksQuerySchema,
   updateTaskLinkSchema,
 } from '@pdm/shared';
 import { validationDetails, validationFailed, validationMessage } from '../lib/errors.js';
@@ -47,7 +48,10 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
       description: 'List a task’s links in slot order (FR-TASK-03)',
       handler: async (req, reply) => {
         const taskId = parseId((req.params as Record<string, string>).id, 'task');
-        const links = await req.server.services.taskLinks.listByTask(taskId);
+        const query = parseOrThrow(listTaskLinksQuerySchema, req.query ?? {});
+        const links = await req.server.services.taskLinks.listByTask(taskId, {
+          includeArchived: query.include_archived,
+        });
         return reply.status(200).send({ links });
       },
     },
