@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { App } from './App';
+import { ProjectsPage } from './features/projects/ProjectsPage';
 
 /**
  * Routing.
@@ -10,12 +11,13 @@ import { App } from './App';
  * acceptance criterion 12, so an unknown path that is *not* a known destination
  * lands on the not-found page below.
  */
-const KNOWN_PATHS = new Set(['/', '/not-found']);
+const KNOWN_PATHS = new Set(['/', '/projects', '/not-found']);
 
 export function Routes_(): JSX.Element {
   return (
     <Routes>
       <Route path="/" element={<App />} />
+      <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/not-found" element={<NotFound />} />
       <Route path="*" element={<Navigate to={KNOWN_PATHS.has(location.pathname) ? '/' : '/not-found'} replace />} />
     </Routes>

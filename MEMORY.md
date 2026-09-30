@@ -781,6 +781,19 @@ Things a future session should not have to rediscover. Checked and ticked when d
       matched their filenames after the `D-24` renumbering. Nobody had opened them since.
       **The next migration is `0002`.**
 
+- [x] **2026-09-30: the project domain is usable end to end.** Repository, service,
+      declared routes and `/projects` screen are done; archive/restore write history in
+      the same transaction; default lists hide archived rows. Tasks, tags and the exit
+      test remain unbuilt.
+- [x] **Do not trust Knex `.returning()` to have one shape.** With `better-sqlite3`
+      it returned an object where a number was expected, so the first project insert
+      produced `entity_id: NaN` in `activity_log`. The repository now reads the new id
+      back through the row's unique `uid` in the same transaction.
+- [x] **Docker Desktop was not running for the final project-slice check.** Local
+      gates are green (`370` unit, `3` integration, coverage, build, compose config),
+      but the rebuilt container serving `/projects` still needs one `docker compose
+      build && up` verification when the daemon is back.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

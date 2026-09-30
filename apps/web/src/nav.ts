@@ -20,7 +20,7 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { path: '/', label: 'Today', release: '0.4.0', enabled: false },
   { path: '/tasks', label: 'Tasks', release: '0.2.0', enabled: false },
-  { path: '/projects', label: 'Projects', release: '0.2.0', enabled: false },
+  { path: '/projects', label: 'Projects', release: '0.2.0', enabled: true },
   { path: '/calendar', label: 'Calendar', release: '0.6.0', enabled: false },
   { path: '/day-log', label: 'Day log', release: '0.4.0', enabled: false },
   { path: '/reminders', label: 'Reminders', release: '0.7.0', enabled: false },

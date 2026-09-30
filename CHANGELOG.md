@@ -10,6 +10,15 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+### Added
+
+- **Projects are usable end to end.** Create, rename, archive and restore projects
+  through declared API routes and the `/projects` screen; every write runs in one
+  transaction with its activity-log entry. Archived projects stay out of default
+  lists and appear only with “Show archived” on; there is no Delete button. Task
+  buckets, tags, todos, links, criteria and references are still unbuilt, so the
+  release exit test remains blocked.
+
 ### Removed
 
 - **Prettier, and with it a `.prettierrc` and two scripts.** Formatting is now

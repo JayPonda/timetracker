@@ -26,23 +26,24 @@ export function App(): JSX.Element {
         <header className="h-14 shrink-0 border-b border-neutral-200 dark:border-neutral-800 flex items-center px-4 gap-3">
           <h1 className="font-semibold">Personal Day Manager</h1>
           <span className="text-xs text-neutral-500 dark:text-neutral-400">
-            foundation and runtime
+            foundation, runtime and projects
           </span>
         </header>
 
         <main className="flex-1 p-6">
           <h2 className="text-lg font-medium mb-2">The foundation is running</h2>
           <p className="max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-            This release contains no features yet. The application runs in Docker, keeps its
-            data in SQLite, migrates its own schema, and serves this page from the same process
-            as the API. Tasks and the timer arrive in the releases listed on the left.
+            Projects are usable: create one, rename it, archive it, restore it. The
+            application runs in Docker, keeps its data in SQLite, migrates its own schema,
+            and serves this page from the same process as the API. Tasks and the timer
+            arrive in the releases listed on the left.
           </p>
 
           <HealthSummary data={data} error={error} />
 
           <h3 className="mt-8 text-sm font-medium mb-2">What is coming</h3>
           <ul className="text-sm text-neutral-600 dark:text-neutral-400 space-y-1">
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.filter((item) => !item.enabled).map((item) => (
               <li key={item.path}>
                 {item.label} — {item.release}
               </li>

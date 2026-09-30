@@ -12,7 +12,9 @@ import { decoratePrincipal, type PrincipalResolver } from './middleware/principa
 import { decorateServices } from './middleware/services.js';
 import { registerRequestId } from './middleware/request-id.js';
 import { createActivityLogService } from './services/activity-log.service.js';
+import { createProjectService } from './services/project.service.js';
 import { healthRoute } from './routes/health.js';
+import { projectRoutes } from './routes/projects.js';
 import { registerRoutes, RouteTable, type RouteDeclaration } from './routes/table.js';
 
 export interface CreateServerOptions {
@@ -85,7 +87,8 @@ export function createServer({
   // receives one rather than constructing its own. A handler that built its own
   // service would hold a second Knex pool, and the transaction it opened would
   // not be the one the route's other writes joined.
-  decorateServices(app, { activityLog: createActivityLogService(knex) });
+  const activityLog = createActivityLogService(knex);
+  decorateServices(app, { activityLog, projects: createProjectService(knex, activityLog) });
   registerRoutes(app, buildRouteTable({ db, config, startedAtMs, extraRoutes }), {
     principalResolver,
   });
@@ -112,9 +115,15 @@ function buildRouteTable(options: {
   startedAtMs: number;
   extraRoutes: readonly RouteDeclaration[];
 }): RouteTable {
-  return options.extraRoutes.reduce<RouteTable>(
+  // Each domain contributes its declarations here, so the table keeps one source
+  // for production routes and the audit keeps one object to compare against.
+  const base = projectRoutes().reduce<RouteTable>(
     (table, declaration) => table.declare(declaration),
     new RouteTable().declare(healthRoute(options)),
+  );
+  return options.extraRoutes.reduce<RouteTable>(
+    (table, declaration) => table.declare(declaration),
+    base,
   );
 }
 
