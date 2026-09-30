@@ -1,6 +1,6 @@
 # ADR 0009: Migrations run through Umzug, not a hand-rolled runner
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0012](0012-migration-runner-knex.md)
 - **Date:** 2026-09-28
 - **Affects:** `DEP-09`, `NFR-MAINT-02`, `NFR-REL-01`, `DATA-07`; release 0.1.0
 - **Supersedes:** the runner described in ADR 0001's "Data access" row
@@ -86,15 +86,26 @@ still pass against Umzug. That is the evidence that the swap was behaviour-prese
 **Keep the hand-rolled runner.** Rejected by the owner, and the reasoning holds: it was
 293 lines of code owned by this project whose generic half duplicated a solved problem.
 
-**`drizzle-kit`, generating migrations from a TypeScript schema.** Rejected because
-`drizzle-orm` is already the query layer and `drizzle-kit` would also become the migration
-author, which is the auditability trade in `NFR-MAINT-02` written in a different font. It
-is worth revisiting only if the schema work in 0.2.0 makes hand-writing 15 tables
-painful — at which point the right answer is a generated-SQL review step, not an ORM
-standing in for the ledger.
+**`drizzle-kit`, generating migrations from a TypeScript schema.** Rejected because it
+would become the migration author, which is the auditability trade in `NFR-MAINT-02`
+written in a different font. It is worth revisiting only if the schema work in 0.2.0 makes
+hand-writing 15 tables painful — at which point the right answer is a generated-SQL review
+step, not an ORM standing in for the ledger.
 
-**Knex.** Rejected: it brings its own query builder, which duplicates `drizzle-orm`, and
-its migrations are JS or generated SQL rather than the plain files we want.
+**`drizzle-orm` as the query layer.** Rejected by the owner on 2026-09-29, and this ADR
+was amended to match. It had been declared in `apps/api/package.json` since 0.1.0 without a
+single import — a dependency the documentation described but the code never adopted, which
+is the worst of both worlds. `better-sqlite3` is synchronous, so a query builder adds an
+abstraction over prepared statements rather than replacing them, and every existing query
+in this repository is already hand-written `db.prepare(...)` SQL. Dropping it also settles
+the `AGENTS.md` rule 10 exception that 0.1.0 shipped with. The cost is real and accepted:
+no compile-time column checking, so a renamed column becomes a runtime error caught by
+tests rather than by `tsc`. `drizzle-kit` is rejected on its own merits above, independent
+of this decision.
+
+**Knex.** Rejected: it brings its own query builder, duplicating what `better-sqlite3`
+already does directly, and its migrations are JS or generated SQL rather than the plain
+files we want.
 
 **`node-pg-migrate`.** Rejected: Postgres only.
 

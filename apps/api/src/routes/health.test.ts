@@ -34,7 +34,9 @@ describe('DEP-06: GET /health reports the app is alive', () => {
 
   it('returns a version', async () => {
     const { app: server } = await app();
-    expect((await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>().version).toBeTruthy();
+    expect(
+      (await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>().version,
+    ).toBeTruthy();
   });
 
   it('returns an uptime in seconds', async () => {
@@ -81,7 +83,9 @@ describe('DEP-06: the health check is a real check', () => {
     // A container that is up but has not finished migrating must not claim to be
     // healthy, or `docker compose up` returns before the schema is ready.
     const { app: server, db } = await app();
-    db.prepare('DELETE FROM schema_migrations WHERE version = (SELECT MAX(version) FROM schema_migrations)').run();
+    db.prepare(
+      'DELETE FROM knex_migrations WHERE id = (SELECT MAX(id) FROM knex_migrations)',
+    ).run();
 
     const body = (await server.inject({ method: 'GET', url: '/health' })).json<HealthResponse>();
     expect(body.migrations.pending).toBe(1);
@@ -142,17 +146,17 @@ describe('every response carries a request id', () => {
 describe('the error envelope is used for every failure', () => {
   it('an unknown API route returns the envelope, not HTML', async () => {
     const { app: server } = await app();
-    const res = await server.inject({ method: 'GET', url: '/api/nope' });
+    const res = await server.inject({ method: 'GET', url: '/api/v1/nope' });
 
     expect(res.statusCode).toBe(404);
-    expect(res.json<{ error: { code: string; message: string; status: number } }>().error.code).toBe(
-      'not_found',
-    );
+    expect(
+      res.json<{ error: { code: string; message: string; status: number } }>().error.code,
+    ).toBe('not_found');
   });
 
   it('the envelope carries the request id', async () => {
     const { app: server } = await app();
-    const res = await server.inject({ method: 'GET', url: '/api/nope' });
+    const res = await server.inject({ method: 'GET', url: '/api/v1/nope' });
 
     expect(res.json<{ error: { request_id?: string } }>().error.request_id).toBeTruthy();
   });
@@ -173,9 +177,20 @@ describe('DEP-11: the app serves the built frontend from the same process', () =
     return harness;
   }
 
-  it('serves index.html at the root', async () => {
+  it('redirects the bare root to the first real screen', async () => {
+    // The root is the one address a human types. Answering 404 there would be a
+    // correct implementation of the scheme and a poor experience, so it is a
+    // permanent redirect to a screen that exists (ADR 0013).
     const { app: server } = await appWithWeb();
     const res = await server.inject({ method: 'GET', url: '/' });
+
+    expect(res.statusCode).toBe(308);
+    expect(res.headers.location).toBe('/ui/v1/tasks');
+  });
+
+  it('serves index.html under the UI prefix', async () => {
+    const { app: server } = await appWithWeb();
+    const res = await server.inject({ method: 'GET', url: '/ui/v1/' });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('PDM');
@@ -183,17 +198,33 @@ describe('DEP-11: the app serves the built frontend from the same process', () =
 
   it('falls back to index.html for a client-side route', async () => {
     const { app: server } = await appWithWeb();
-    const res = await server.inject({ method: 'GET', url: '/tasks/42' });
+    // This must be a path no API route claims: it was `/tasks/42` until the
+    // task routes landed and it became a 403 from the capability guard instead
+    // of the fallback. Claiming this path for an API route means updating this
+    // example, which is the test doing its job.
+    const res = await server.inject({ method: 'GET', url: '/ui/v1/tasks/42' });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('PDM');
+  });
+
+  it('answers a DELETE with 404 rather than the SPA fallback', async () => {
+    // In production a web build exists, so the fallback once answered DELETE
+    // /projects/1 with 200 and index.html — a client told its deletion
+    // succeeded while nothing was deleted. The fallback serves pages, and
+    // pages are fetched with GET.
+    const { app: server } = await appWithWeb();
+    const res = await server.inject({ method: 'DELETE', url: '/api/v1/projects/1' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<{ error: { code: string } }>().error.code).toBe('not_found');
   });
 
   it('returns 404 for a missing asset instead of masking it as index.html', async () => {
     // Answering a script request with HTML gives a MIME-type error in the
     // browser that says nothing about the real cause.
     const { app: server } = await appWithWeb();
-    const res = await server.inject({ method: 'GET', url: '/assets/missing.js' });
+    const res = await server.inject({ method: 'GET', url: '/ui/v1/assets/missing.js' });
 
     expect(res.statusCode).toBe(404);
     expect(res.body).not.toContain('<!doctype html>');
@@ -201,7 +232,7 @@ describe('DEP-11: the app serves the built frontend from the same process', () =
 
   it('serves a real asset', async () => {
     const { app: server } = await appWithWeb();
-    const res = await server.inject({ method: 'GET', url: '/assets/app.js' });
+    const res = await server.inject({ method: 'GET', url: '/ui/v1/assets/app.js' });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('console.log');
@@ -212,6 +243,56 @@ describe('DEP-11: the app serves the built frontend from the same process', () =
     const res = await server.inject({ method: 'GET', url: '/health' });
 
     expect(res.json<HealthResponse>().status).toBe('ok');
+  });
+});
+
+describe('ADR 0013: the SPA fallback reaches only the UI namespace', () => {
+  async function appWithWeb(): Promise<TestApp> {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const webDir = mkdtempSync(join(tmpdir(), 'pdm-web-'));
+    mkdirSync(join(webDir, 'assets'), { recursive: true });
+    writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>PDM</title>', 'utf8');
+    writeFileSync(join(webDir, 'assets', 'app.js'), 'console.log(1)', 'utf8');
+
+    harness = await createTestApp({ env: { PDM_WEB_DIR: webDir } });
+    return harness;
+  }
+
+  /**
+   * The regression this whole scheme prevents.
+   *
+   * Before ADR 0013 the fallback excluded `/api` **specifically**, so every other
+   * unprefixed path was answered with HTML: a mistyped `/tasks` returned the
+   * whole application shell with a 200, and a client could not tell a wrong URL
+   * from a right one. The check is now the positive form of the scheme, so an
+   * unknown path is a JSON 404 and only `/ui/v1/**` is a page.
+   */
+  it('answers an unknown unprefixed path with the envelope, not the app shell', async () => {
+    const { app: server } = await appWithWeb();
+    const res = await server.inject({ method: 'GET', url: '/tasks' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain('<!doctype html>');
+    expect(res.json<{ error: { code: string } }>().error.code).toBe('not_found');
+  });
+
+  it('answers the unversioned /ui with 404, because no such version was served', async () => {
+    const { app: server } = await appWithWeb();
+    const res = await server.inject({ method: 'GET', url: '/ui' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain('<!doctype html>');
+  });
+
+  it('does not shadow an unknown API path with the shell', async () => {
+    const { app: server } = await appWithWeb();
+    const res = await server.inject({ method: 'GET', url: '/api/v1/nope' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain('<!doctype html>');
   });
 });
 

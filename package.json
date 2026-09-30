@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Personal Day Manager (PDM) — single-user day manager, runs in Docker",
+  "description": "Personal Day Manager (PDM) \u2014 single-user day manager, runs in Docker",
   "engines": {
     "node": ">=22",
     "pnpm": ">=10"
@@ -16,8 +16,6 @@
     "build": "pnpm -r build",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
     "typecheck": "pnpm --filter @pdm/shared build && tsc -b",
     "test": "pnpm --filter @pdm/shared build && vitest run",
     "test:watch": "pnpm --filter @pdm/shared build && vitest",
@@ -28,9 +26,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.17.0",
-    "eslint-config-prettier": "^9.1.0",
-    "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
     "vitest": "^2.1.8"

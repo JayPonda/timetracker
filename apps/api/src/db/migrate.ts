@@ -1,52 +1,56 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { readdirSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Database as Db } from 'better-sqlite3';
-import { Umzug, type UmzugStorage } from 'umzug';
 import { nowMs } from '@pdm/shared';
 import { backupDatabase, migrationBackupDir, restoreDatabase } from './backup.js';
+import { createKnex } from './knex.js';
 
 /**
- * Migration wrapper around **Umzug** (DEP-09, NFR-MAINT-02, ADR 0009).
+ * Migration wrapper around **Knex** (DEP-09, NFR-MAINT-02, ADR 0012).
  *
- * Umzug does the running: it globs the `.sql` files, orders them, skips what is
- * already applied, and reports progress. That is the whole of a migration
- * runner's job, and re-implementing it was our decision to stop making — see
- * ADR 0009 for why the hand-rolled runner was replaced.
+ * Knex does the running: it lists the `.js` files, orders them, skips what is
+ * already applied, records the batch, and reports progress in `[batch, log]`.
+ * That is the whole of a migration runner's job, and re-implementing it is a
+ * decision this project already stopped making — see ADR 0012 for why the
+ * hand-rolled Umzug runner was replaced.
  *
- * What stays here is only what Umzug cannot know about this project, and each
+ * What stays here is only what Knex cannot know about this project, and each
  * piece is a requirement rather than a convenience:
  *
- * 1. **Plain `.sql` files**, named `NNNN_name.sql`. `NFR-MAINT-02` wants a
- *    migration to be auditable by a human reading one file, so the files stay
- *    SQL and not generated code.
- * 2. **A ledger in SQLite** (`schema_migrations`), not Umzug's default JSON
- *    file. `schema_migrations` is part of the agreed data model (AGENTS.md
- *    Part 7) and is what `/health` reports, so the storage adapter below keeps
- *    it in the database.
- * 3. **A pre-migration backup**, via the online API. A migration that goes wrong
+ * 1. **A migration file is `NNNN_name.js` that execs the reviewed schema
+ *    SQL.** Each file keeps the DDL byte-identical to the hand-written SQL it
+ *    was generated from, so `.js` is a shape change, not a rewrite of the
+ *    schema (NFR-MAINT-02).
+ * 2. **One SQLite transaction per migration.** Knex is told
+ *    `disableTransactions: true` — its own wrapper would make every migration
+ *    one big transaction and also defeats the point of a ledger — and instead
+ *    each migration opens the native better-sqlite3 connection and runs its DDL
+ *    inside `conn.transaction(...)`. A failure rolls back that migration
+ *    completely, and the failed migration's name never reaches `knex_migrations`.
+ * 3. **The ledger in SQLite** (`knex_migrations`), which is what `/health`
+ *    reports, so no second place can disagree with the database.
+ * 4. **A pre-migration backup**, via the online API. A migration that goes wrong
  *    must be recoverable without the owner having known to take a manual copy.
- * 4. **Restore and abort on failure**, naming the backup file. Continuing on a
+ * 5. **Restore and abort on failure**, naming the backup file. Continuing on a
  *    half-migrated database would fail later, somewhere that does not point back
  *    at the cause.
- * 5. **Immutability and contiguity checks**, run before anything is applied. A
- *    deleted or edited migration is a silent divergence between two
- *    environments, and Umzug's ledger records only that a name ran, not what it
- *    contained.
+ * 6. **A contiguity check**, run before anything is applied. A gap means a
+ *    migration was deleted rather than written out of order, and deleting a
+ *    migration is the one thing the no-delete policy cannot tolerate for the
+ *    schema itself.
  *
- * One honest limitation: Umzug calls `up()` and then records the row, so the DDL
- * and its ledger row are two transactions. A crash in that window leaves an
- * applied migration unrecorded, and the next boot re-runs it and fails loudly.
- * That is a loud failure with a backup named in the message, which is the
- * failure mode this project prefers over a silent one.
+ * The immutability checksum that the old runner kept is gone. The owner's
+ * decision when adopting Knex (2026-09-29) was to drop that guarantee and run
+ * migrations on their `IF NOT EXISTS` strengths instead; the checksum buys a
+ * false sense of safety against a database `knex_migrations` does not keep.
+ * See ADR 0012.
  */
 
 export interface MigrationFile {
   version: number;
   name: string;
-  sql: string;
-  checksum: string;
   path: string;
 }
 
@@ -76,7 +80,7 @@ export class MigrationError extends Error {
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
 
-const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
+const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.js$/;
 
 /** Reads and parses the migration files, sorted by version. */
 export function loadMigrations(dir: string = MIGRATIONS_DIR): MigrationFile[] {
@@ -84,14 +88,10 @@ export function loadMigrations(dir: string = MIGRATIONS_DIR): MigrationFile[] {
     .map((file) => {
       const match = FILE_PATTERN.exec(file);
       if (!match) return null;
-      const path = join(dir, file);
-      const sql = readFileSync(path, 'utf8');
       return {
         version: Number(match[1]),
         name: match[2],
-        sql,
-        checksum: createHash('sha256').update(sql).digest('hex'),
-        path,
+        path: join(dir, file),
       };
     })
     .filter((m): m is MigrationFile => m !== null)
@@ -131,22 +131,31 @@ function assertNoGaps(migrations: MigrationFile[]): void {
   });
 }
 
-function ensureLedger(db: Db): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version    INTEGER PRIMARY KEY,
-      name       TEXT    NOT NULL,
-      checksum   TEXT    NOT NULL,
-      applied_at INTEGER NOT NULL
-    ) STRICT;
-  `);
+/** Knex creates its own ledger (`knex_migrations`) on first run. */
+function tableExists(db: Db, name: string): boolean {
+  return (
+    db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(name) !== undefined
+  );
 }
 
-function appliedMap(db: Db): Map<number, { name: string; checksum: string }> {
+/**
+ * The ledger as recorded by Knex, keyed by version. Parsed from each row's
+ * filename (`0001_settings.js`), because `version` is not a column Knex keeps.
+ */
+function readLedgerByVersion(db: Db): Map<number, number> {
+  if (!tableExists(db, 'knex_migrations')) return new Map();
   const rows = db
-    .prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version')
-    .all() as Array<{ version: number; name: string; checksum: string }>;
-  return new Map(rows.map((r) => [r.version, { name: r.name, checksum: r.checksum }]));
+    .prepare('SELECT name, migration_time FROM knex_migrations')
+    .all() as Array<{ name: string; migration_time: number }>;
+
+  const byVersion = new Map<number, number>();
+  for (const row of rows) {
+    const match = FILE_PATTERN.exec(row.name);
+    if (match) byVersion.set(Number(match[1]), Number(row.migration_time));
+  }
+  return byVersion;
 }
 
 export interface MigrateOptions {
@@ -161,119 +170,79 @@ export interface MigrateOptions {
 }
 
 /**
- * Umzug's storage backed by the `schema_migrations` table.
- *
- * Three methods, per Umzug's `UmzugStorage` contract. `executed` returns the
- * ledger's names, which is how Umzug decides what is still pending.
- */
-function ledgerStorage(db: Db): UmzugStorage<{ db: Db; manifest: Map<string, MigrationFile> }> {
-  const write = db.prepare(
-    'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)',
-  );
-
-  return {
-    async logMigration({ name, path, context }) {
-      const file = context.manifest.get(path ?? '');
-      if (!file) throw new MigrationError(`Umzug recorded an unknown migration: ${name}`);
-      write.run(file.version, file.name, file.checksum, nowMs());
-    },
-
-    async unlogMigration({ path, context }) {
-      const file = context.manifest.get(path ?? '');
-      if (file) db.prepare('DELETE FROM schema_migrations WHERE version = ?').run(file.version);
-    },
-
-    async executed() {
-      const rows = db
-        .prepare('SELECT version, name FROM schema_migrations ORDER BY version')
-        .all() as Array<{ version: number; name: string }>;
-      // Umzug matches by filename; the ledger stores the slug and the version.
-      return rows.map((r) => `${String(r.version).padStart(4, '0')}_${r.name}.sql`);
-    },
-  };
-}
-
-/** Builds the Umzug instance. The resolver is what actually runs a migration. */
-function createUmzug(
-  db: Db,
-  dir: string,
-  files: MigrationFile[],
-  onBeforeApply: (file: MigrationFile) => void,
-): Umzug<{ db: Db; manifest: Map<string, MigrationFile> }> {
-  const manifest = new Map(files.map((f) => [f.path, f]));
-
-  return new Umzug<{ db: Db; manifest: Map<string, MigrationFile> }>({
-    migrations: {
-      glob: ['*.sql', { cwd: dir }],
-      resolve: ({ name, path }) => {
-        const file = manifest.get(path ?? '');
-        if (!file) throw new MigrationError(`Umzug offered a migration that is not in ${dir}: ${String(path)}`);
-
-        return {
-          name,
-          path,
-          // Synchronous SQLite, but Umzug's contract is async.
-          up: async () => {
-            onBeforeApply(file);
-
-            // SQLite DDL is transactional, which is why one transaction per
-            // migration gives "no partial schema" without any extra work.
-            db.transaction(() => {
-              db.exec(file.sql);
-            })();
-          },
-        };
-      },
-    },
-    context: { db, manifest },
-    storage: ledgerStorage(db),
-    logger: undefined,
-  });
-}
-
-/**
  * Runs every pending migration. **Migrate before the server listens** (index.ts).
  *
  * The preflight checks run first and throw before a single statement is applied,
- * so an edited or deleted migration stops the boot with the database untouched.
+ * so a deleted or out-of-order migration stops the boot with the database
+ * untouched.
  */
 export async function migrate(db: Db, options: MigrateOptions = {}): Promise<MigrateResult> {
-  ensureLedger(db);
-
   const dir = options.dir ?? MIGRATIONS_DIR;
   const files = loadMigrations(dir);
-  const applied = appliedMap(db);
 
-  assertNoEdits(files, applied);
-
-  const result: MigrateResult = { applied: [], skipped: [], total: files.length };
-  let lastBackup: string | undefined;
-
-  const umzug = createUmzug(db, dir, files, (file) => {
-    if (!options.backupDir || options.skipBackup) return;
-    lastBackup = backupDatabase(db, {
-      destDir: migrationBackupDir(options.backupDir),
-      name: `pre-${String(file.version).padStart(4, '0')}`,
-    }).path;
-  });
-
-  const alreadyApplied = files.filter((f) => applied.has(f.version));
-  for (const file of alreadyApplied) {
-    result.skipped.push({ version: file.version, name: file.name, status: 'skipped' });
+  const dbPath = options.dbPath ?? db.name;
+  if (dbPath === ':memory:') {
+    throw new MigrationError(
+      'Migrations need a file database; an in-memory database cannot be migrated.',
+    );
   }
 
+  const result: MigrateResult = { applied: [], skipped: [], total: files.length };
+  const state: { active?: MigrationFile; lastBackup?: string } = {};
+  const appliedBefore = readLedgerByVersion(db);
+
+  for (const file of files) {
+    if (appliedBefore.has(file.version)) {
+      result.skipped.push({ version: file.version, name: file.name, status: 'skipped' });
+    }
+  }
+
+  const knex = createKnex({ file: dbPath });
+
+  const migrationSource = {
+    async getMigrations() {
+      return files.map((file) => basename(file.path));
+    },
+    getMigrationName(name: string) {
+      return name;
+    },
+    async getMigration(name: string) {
+      const file = files.find((f) => basename(f.path) === name);
+      if (!file) throw new MigrationError(`No migration in ${dir} matches ${name}`);
+      // `.js` is ESM and the file carries its own up/down. The runner wraps `up`
+      // so the backup happens and the failed migration is named by point.
+      const module = (await import(pathToFileURL(file.path).toString())) as {
+        up: (knex: unknown) => Promise<void>;
+        down: (knex: unknown) => Promise<void>;
+      };
+      return {
+        up: async (knex: unknown) => {
+          state.active = file;
+          if (options.backupDir && !options.skipBackup) {
+            state.lastBackup = backupDatabase(db, {
+              destDir: migrationBackupDir(options.backupDir),
+              name: `pre-${String(file.version).padStart(4, '0')}_${file.name}`,
+            }).path;
+          }
+          return module.up(knex);
+        },
+        down: (knex: unknown) => module.down(knex),
+      };
+    },
+  };
+
   try {
-    // No `migrations` list: Umzug derives pending from the ledger via
-    // `storage.executed`, which is the same skip-if-applied rule the tests pin.
-    const ran = await umzug.up();
-    for (const item of ran) {
-      const file = files.find((f) => f.path === item.path);
+    const [, log] = await knex.migrate.latest({ migrationSource, disableTransactions: true });
+    for (const name of log) {
+      const file = files.find((f) => basename(f.path) === name);
       if (file) result.applied.push({ version: file.version, name: file.name, status: 'applied' });
     }
   } catch (cause) {
-    throw describeFailure(cause, lastBackup, options);
+    await knex.destroy();
+    throw describeFailure(cause, state, options);
   }
 
+  await knex.destroy();
   return result;
 }
 
@@ -284,17 +253,19 @@ export async function migrate(db: Db, options: MigrateOptions = {}): Promise<Mig
  * failed boot leaves the database as it was before the run rather than asking
  * the owner to notice and act.
  */
-function describeFailure(cause: unknown, backupPath: string | undefined, options: MigrateOptions): MigrationError {
+function describeFailure(cause: unknown, state: { active?: MigrationFile; lastBackup?: string }, options: MigrateOptions): MigrationError {
   if (cause instanceof MigrationError && cause.backupPath === undefined) return cause;
 
-  const failed = umzugMigrationName(cause) ?? 'an unknown migration';
+  const active = state.active;
+  const failed = active ? `${String(active.version).padStart(4, '0')}_${active.name}` : 'an unknown migration';
   const reason = rootMessage(cause);
+  const backupPath = state.lastBackup;
   const restorePath = backupPath ? safeRestore(backupPath, options) : undefined;
 
   const where = backupPath
     ? `The pre-migration backup is at ${backupPath}${
-        restorePath ? ' and has been restored over the database.' : `; restore it with: pnpm --filter api restore ${backupPath}`
-      }`
+      restorePath ? ' and has been restored over the database.' : `; restore it with: pnpm --filter api restore ${backupPath}`
+    }`
     : 'No pre-migration backup was taken for this run.';
 
   return new MigrationError(
@@ -302,15 +273,6 @@ function describeFailure(cause: unknown, backupPath: string | undefined, options
       'The boot is aborted rather than continuing on a partially migrated schema.',
     { backupPath, restorePath },
   );
-}
-
-/** Pulls the migration name out of Umzug's `MigrationError`, if it is one. */
-function umzugMigrationName(cause: unknown): string | undefined {
-  if (typeof cause === 'object' && cause !== null && 'migration' in cause) {
-    const migration = (cause as { migration?: { name?: unknown } }).migration;
-    if (typeof migration?.name === 'string') return migration.name;
-  }
-  return undefined;
 }
 
 function rootMessage(cause: unknown): string {
@@ -335,24 +297,6 @@ function safeRestore(backupPath: string, options: MigrateOptions): string | unde
   }
 }
 
-/**
- * An applied migration is immutable. Editing one leaves the database and the
- * file describing different schemas, which is how two environments diverge
- * silently. Add a new migration instead.
- */
-function assertNoEdits(files: MigrationFile[], applied: Map<number, { name: string; checksum: string }>): void {
-  for (const file of files) {
-    const previous = applied.get(file.version);
-    if (!previous) continue;
-    if (previous.checksum !== file.checksum) {
-      throw new MigrationError(
-        `Migration ${String(file.version).padStart(4, '0')}_${file.name} was already applied with a different checksum. ` +
-          'Applied migrations are immutable; add a new migration instead of editing this one.',
-      );
-    }
-  }
-}
-
 export interface MigrationStatus {
   applied: Array<{ version: number; name: string; applied_at: number }>;
   pending: Array<{ version: number; name: string }>;
@@ -361,24 +305,18 @@ export interface MigrationStatus {
 
 /** What `pnpm --filter api migrate:status` prints. */
 export function migrationStatus(db: Db, dir: string = MIGRATIONS_DIR): MigrationStatus {
-  ensureLedger(db);
   const migrations = loadMigrations(dir);
-  const applied = appliedMap(db);
-
-  const appliedAt = db
-    .prepare('SELECT version, applied_at FROM schema_migrations ORDER BY version')
-    .all() as Array<{ version: number; applied_at: number }>;
-  const appliedAtMap = new Map(appliedAt.map((r) => [r.version, r.applied_at]));
+  const appliedAt = readLedgerByVersion(db);
 
   return {
     applied: migrations
-      .filter((m) => applied.has(m.version))
+      .filter((m) => appliedAt.has(m.version))
       .map((m) => ({
         version: m.version,
         name: m.name,
-        applied_at: appliedAtMap.get(m.version) ?? 0,
+        applied_at: appliedAt.get(m.version) ?? 0,
       })),
-    pending: migrations.filter((m) => !applied.has(m.version)).map((m) => ({ version: m.version, name: m.name })),
+    pending: migrations.filter((m) => !appliedAt.has(m.version)).map((m) => ({ version: m.version, name: m.name })),
     ok: true,
   };
 }

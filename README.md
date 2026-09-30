@@ -116,6 +116,29 @@ docker compose logs --tail=100 pdm  # last 100 lines
 `pdm-migrate` is a one-shot job container, so its logs end with the migrations
 it applied and then stop. Seeing it `exited (0)` is the healthy state.
 
+Every line has the same shape, whatever produced it — the API, a CLI command or
+the browser:
+
+```text
+[2026-09-29T08:26:23.571Z] [INFO] (migrate.ts) (migrate) migration applied migration=0001_settings
+[2026-09-29T08:25:37.610Z] [INFO] (index.ts) (boot) listening host=0.0.0.0 port=8080
+```
+
+That is `[datetime] [level] (file) (function) message key=value key1=value1`, so a
+line can be found by level, by file, or by any value in it:
+
+```bash
+docker compose logs pdm | grep '\[ERROR\]'
+docker compose logs pdm | grep 'task_id=42'
+```
+
+One variable controls how much is printed: `LOG_LEVEL` in `.env`, one of
+`trace`, `debug`, `info`, `warn`, `error`, `fatal` or `silent`. It defaults to
+`info`, and it applies to both containers. The **good path is logged, not just
+failures** — a timer started, a backup written, a migration applied — because a
+log that records only problems cannot answer "what was this process doing at
+14:03". Set `LOG_LEVEL=debug` while diagnosing, `trace` to see every branch.
+
 ### Backup
 
 Automatic daily backups arrive in 0.9.0. Take one now with:

@@ -31,6 +31,19 @@ export const configSchema = z.object({
   /** The zone day boundaries and every displayed time are computed in (NFR-TIME-01). */
   TZ: z.string().default('UTC'),
 
+  /**
+   * How much the app says about itself.
+   *
+   * Validated here as well as read by `lib/logger.ts`, and the duplication is
+   * deliberate rather than an oversight. The logger cannot take its level from
+   * this object, because a logger that depends on a config that parsed
+   * successfully cannot log the failure that parsing produced — `main.ts` reports
+   * a `ConfigError` through it. Both read the one variable, so they cannot
+   * disagree, and this schema is what turns a typo into a refusal to start
+   * rather than a log that quietly says nothing.
+   */
+  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
+
   /** Directory of built frontend assets. Empty means "no frontend served". */
   PDM_WEB_DIR: z.string().default('/app/web'),
 });

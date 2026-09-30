@@ -108,7 +108,7 @@ Full rationale per decision in the ADRs. This is the summary.
 | Runtime | Node.js 22+, TypeScript, one container `pdm` | One language across the stack, small image, matches SRS §3.1 (answers `Q5`) |
 | API | **Fastify** + TypeScript | Schema-based validation (→ `NFR-SEC-02`), `app.inject()` for network-free tests, small and fast |
 | Database | **SQLite** through `better-sqlite3`; `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL` | Synchronous driver makes transactions *trivially* correct (`DATA-08`); one file, trivial backup (`DEP-03`, `DEP-07`) |
-| Data access | **Drizzle ORM** for typed queries + versioned SQL migrations run by **Umzug** over our `schema_migrations` ledger | Typed, no codegen step, migrations stay readable and auditable (`NFR-MAINT-02`); the runner is a thin wrapper, not ours to maintain ([ADR 0009](adr/0009-migration-runner-umzug.md)) |
+| Data access | **Knex** query builder + `NNNN_name.js` migrations run by Knex over its `knex_migrations` ledger | One tool for the whole data layer; the JS files embed the reviewed SQL so migrations stay auditable (`NFR-MAINT-02`); pre-migration backup, restore-and-abort and contiguity stay in the wrapper ([ADR 0012](adr/0012-migration-runner-knex.md)) |
 | Aggregates | **SQL views**: `v_task_totals`, `v_todo_totals`, `v_tag_totals`, `v_day_totals`, `v_project_totals` | `DATA-04`: totals are never stored, so they cannot drift, and the app code does not compute them |
 | Running timer | The `time_entries` row with `ended_at IS NULL` **is** the state; elapsed = `now − started_at` | Survives refresh, browser close, container restart (`FR-TIME-06`, `FR-TIME-10`) with no extra state. Enforced by a partial unique index (`DATA-02`) |
 | Time | Epoch-millisecond `INTEGER`, stored UTC; day boundaries computed in `TZ` via a small in-house `Intl` helper | DST-safe durations (`NFR-TIME-01`, `DATA-07`) with no date library dependency |
@@ -122,7 +122,7 @@ Full rationale per decision in the ADRs. This is the summary.
 | Version stamp | One `version` in the root `package.json`, injected into `/health` and both image tags | `DEP-06`, `MCP-08` |
 
 Target runtime dependencies: `fastify`, `@fastify/static`, `@fastify/cors`, `better-sqlite3`,
-`drizzle-orm`, `zod`, `react`, `react-dom`, `react-router`, `@tanstack/react-query`,
+`knex`, `zod`, `react`, `react-dom`, `react-router`, `@tanstack/react-query`,
 `@modelcontextprotocol/sdk`. Anything else needs an ADR.
 
 ---
@@ -221,14 +221,15 @@ preserved input (`UI-08`); API capability classification in place for MCP.
 
 1. Adding a 4th link to a task returns 422 with a clear message, and a direct SQL insert
    of a 4th link is rejected by a database trigger (`DATA-01`, `US-06`).
-2. Every one of the 13 user-data tables refuses `DELETE` at the database level, proven by
+2. Every user-data table but one refuses `DELETE` at the database level, proven by
    a test that enumerates all of them (`DATA-10`).
 3. Archiving a project hides it and its tasks from pickers and default lists, keeps all
    data, and restoring brings everything back (`FR-PRJ-04`, `BR-16`, `US-07`).
 4. Archiving a tag hides it from pickers but leaves existing entries and per-tag totals
    unchanged (`FR-TAG-05`).
-5. Archiving a todo keeps its time entries linked to it — verified once entries exist in
-   0.3.0 and asserted here against the foreign key (`DATA-05`, `FR-PHASE-05`).
+5. Archiving a todo keeps its time entries linked to it, and does not archive the entry
+   with it — asserted in `schema.test.ts`, and verified again through the API in 0.3.0
+   (`DATA-05`, `FR-PHASE-05`).
 6. Editing an Ended task is allowed and the change is recorded in history
    (`FR-TASK-12`, `FR-STAT-05`).
 7. No API route accepts a delete of user data; a test scans the route table

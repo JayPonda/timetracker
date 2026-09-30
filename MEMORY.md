@@ -56,6 +56,134 @@ on it; a stale snapshot here is worse than none.
 
 ## Gotchas discovered
 
+### Vite only exposes `VITE_`-prefixed variables to the browser bundle
+
+Discovered 2026-09-29, while building the project logger. The obvious move — read `LOG_LEVEL`
+in both apps, because it is the name the project already documents — is a trap in the
+frontend. Vite substitutes only `VITE_`-prefixed variables at build time, so an unprefixed
+name is `undefined` in a bundle **by construction**. It does not error; it looks configured
+and quietly logs at the default, which is the worst way for a log level to fail.
+
+The API reads `LOG_LEVEL`; the browser reads `VITE_LOG_LEVEL`. Same class, same line format,
+different variable name, for a reason that will not be obvious to the next person reading it.
+
+### An env var documented in `.env.example` still has to be passed into the container
+
+Same session. `LOG_LEVEL` was documented and read correctly in the code, and did nothing in
+Docker, because `docker-compose.yml` enumerates the environment explicitly and the variable
+was not in either service's list. A variable that is not listed is not inherited, whatever
+`.env` says.
+
+**This is the class of bug that survives review and passes every test**, because every test
+runs outside the container. After changing any variable in `.env.example`, check it against
+both `environment:` blocks in `docker-compose.yml`, and verify with
+`docker compose config | grep VAR`. Done for `LOG_LEVEL`; the other variables were already
+listed.
+
+### Prettier was removed, because it cost more to review than it was worth
+
+On 2026-09-29 the owner asked to drop Prettier after watching it reflow 305 lines of
+`ROADMAP.md` tables around a one-line edit and reformat a test file a change had never
+touched. `prettier`, `eslint-config-prettier`, `.prettierrc.json`, `.prettierignore` and the
+`format` / `format:check` scripts are gone. `@stylistic/eslint-plugin` now enforces the style
+inside `eslint.config.js`, so `pnpm lint` is the linter and the formatter check in one command
+and `pnpm lint:fix` is the formatter.
+
+**The 53-file problem dissolved, and that is the evidence the decision was right.** Those 53
+failures were overwhelmingly *markdown* — tables, and files like `VERSIONING.md` that ESLint
+does not lint at all. The first `@stylistic` rule set I wrote reported **204** errors, and 197 of
+them were my own two rules disagreeing with the deliberate house style: interfaces here are
+written `field: Type;` and I had asked for no delimiter, and the "single quotes" rule was
+complaining about multi-line template literals that have no other spelling. Both rules were
+wrong, not the 197 lines. Correcting the config to match the code left **7** real problems, all
+of them genuine — 5 missing trailing newlines and 2 wrong indentation inside a template literal
+in `migrate.ts` — fixed in 4 lines.
+
+**The lesson generalises beyond formatting, and it is the one worth keeping.** A rule that
+disagrees with 170 lines of deliberate code is a rule to delete, not a codebase to reformat. The
+cheap test is to write the rule, run it, and read the *breakdown by rule* before reaching for
+`--fix`. Had I run `lint:fix` on the first config I would have committed a 197-line whitespace
+commit and called it tidying. Read the histogram; the 170 was one config mistake, not 170
+mistakes.
+
+**Do not reintroduce a second formatter.** Two formatters is how the noise came back: each
+rewrites what the other touched. If a style needs enforcing, it goes in `eslint.config.js`.
+
+### `pnpm test:coverage` was never wired up, and the version matters
+
+`@vitest/coverage-v8` was not in any `package.json`, so the script failed with
+`Cannot find dependency '@vitest/coverage-v8'`. It was documented in `AGENTS.md` and
+`docs/TESTING.md` as "fails below N% on business modules", which reads as a passing gate and
+is not one.
+
+The fix is `pnpm add -D -w @vitest/coverage-v8@<same major as vitest>`. **The version suffix is
+not optional.** Installing the provider unpinned pulled v5 against this repo's Vitest 2.1.9 and
+failed at startup with a bewildering `vitest/node does not provide an export named
+'BaseCoverageProvider'`, which reads like a Vitest bug rather than a major-version mismatch. The
+provider and the runner must be the same major.
+
+It matters because the 0.2.0 Definition of Done requires coverage on
+`apps/api/src/services/**` and `packages/shared`, and that box could not honestly be checked
+until the provider was installed.
+
+**The second half of that gotcha: installing the provider was still not a gate.** The script ran
+and exited 0 whatever it measured, because `vitest.config.ts` had no `coverage.thresholds`. A
+report nobody fails on is a report nobody reads, and the DoD box would have been checked by
+assertion — the exact thing the box was written to prevent. The `thresholds` block is now in
+the root config, scoped to `services/**` and `packages/shared`, and it was verified by
+temporarily raising the floor to 100% and watching the command exit 1. **Keep doing that check
+after every change to the thresholds — a gate nobody has seen fail is not known to be a gate.**
+
+**The floor is 95%, raised from 80% by owner decision on 2026-09-29, and it earned its keep
+immediately.** Raising it failed the build, because `dateKeyRange` in
+`packages/shared/src/time.ts` had **no test at all** — a public helper that walks a day range
+by repeatedly advancing to the next local midnight, used for day-bucketed reports. It now has
+six tests, including a DST transition (where a naive implementation drifts by an hour per
+year) and the 4000-day bound. This is the argument for the higher number in one line: it found
+untested code in the first minute, and the code was not trivial.
+
+**Why the floor excludes `repositories/**` and `middleware/**`, deliberately.** A repository is
+a query, and the rule it serves is verified by the service test that calls it. Thresholding
+queries separately pushes tests to exist for coverage's sake rather than a rule's sake. They
+are still in the `include` list, so a collapse is visible in the text report without being able
+to fail a build on scaffolding.
+
+**Coverage runs in CI as its own step, after `Test`, not as a flag on it.** Two reasons: a
+combined step reports a coverage failure as "tests failed", which sends the next person to the
+wrong file; and `pnpm test:coverage` re-runs the suite with the v8 provider loaded, so folding
+it in would double the time for no gain. The job's timeout went 15 → 20 minutes to absorb the
+extra run.
+
+### The CI reporter is chosen by an environment variable, not a second script
+
+Owner request 2026-09-29: *"only shows the test which fails … there should be a flag for ci or
+silent."* The root `vitest.config.ts` now reads:
+
+```ts
+reporter: process.env['VITEST_REPORTER'] ?? (process.env['CI'] ? 'dot' : 'default')
+```
+
+`dot` prints a character per test file and expands only the failures, so a red build opens on
+the cause instead of on 300 lines of passing files. `default` stays locally, where the long form
+is what you want when you are watching one suite. `VITEST_REPORTER` overrides both.
+
+**Why an env switch and not a separate `test:ci` script:** a second script is a second thing to
+keep correct. It would drift — someone adds an argument to `pnpm test` and CI keeps running the
+old command, and the gate stops being the gate. Here the tests, the assertions and the exit code
+are identical either way, so the only difference is how much of it gets printed.
+
+Note the spelling: `dot`, not `silent`. Vitest's `silent` reporter prints *nothing at all*,
+including the failures, which is the opposite of what was asked for. `dot` is the one that shows
+only what failed.
+
+### A coverage threshold on *every* file is a threshold the team learns to ignore
+
+`App.tsx`, `main.tsx`, `version.ts` — files whose lines are executed but whose branches are
+either trivial or unreachable — can sit above or below the floor for reasons unrelated to whether
+anyone wrote a test. Then a red build means "the threshold is annoying" rather than "a rule is
+untested", and the one signal is gone. Scoping the floor to the directory that holds the
+business rules keeps it meaningful.
+
 ### pnpm 10+ blocks dependency install scripts by default
 
 `pnpm config get onlyBuiltDependencies` currently returns `undefined` on this machine, which
@@ -135,6 +263,134 @@ technical decision, an ADR. **Do not re-raise these as new questions** — they 
 ---
 
 ## Session log
+
+### 2026-09-29 — Session 8: the API foundation layer, and making coverage a gate
+
+**The owner's instruction:** continue with the 0.2.0 checklist, starting with Phase 0 — the
+foundation every later service writes through.
+
+**What landed.** The three layers now exist and are wired into `createServer`: the typed
+`AppError` and its one code-to-status map, the error envelope moved out of `server.ts` into
+`middleware/error.ts`, the principal seam, the services decorator, the declared-route table,
+and the first repository and service pair (activity log). `packages/shared/src/uid.ts` adds
+the UUIDv7 that nothing previously generated. 320 unit tests, 3 integration tests, all five
+gates green.
+
+**Four decisions worth keeping, because the code looks simpler without them:**
+
+- **A capability declaration with an empty list is refused, not allowed.** The guard was
+  `required.every(...)`, and `[].every()` is `true`, so a route declared with `capabilities: []`
+  was open to everyone. The check is `required.length === 0 || missing.length > 0`. It is the
+  same class of bug as an `if (!list.length)` guard on an empty list, and it would have been a
+  capability hole with a test suite around it.
+- **The route audit runs in `onReady` and throws**, so a handler added straight to the app
+  cannot ship. This has a testing cost that cost me three failures: Fastify refuses `get` and
+  `addHook` on a readied instance, so such a test must own the `ready()` call. That is what
+  `createTestApp({ deferReady: true })` is for, and it is why the flag exists at all.
+- **`@fastify/static` needs an exemption**, or a real frontend build makes the app refuse to
+  boot. It keys on `config.file` *and* `config.rootPath`, both present, and the audit also
+  skips `HEAD` where `GET` is declared. The exemption is tested against a capability
+  declaration that merely names a file, which is the case that would otherwise hide a hole.
+- **Services are decorated on the app, not built per handler.** A handler that constructed its
+  own would hold a second Knex pool and open a transaction its other writes could not join.
+  `createServer` now takes the Knex instance and builds the service once, which also removed
+  the unused-parameter lint error that was the visible symptom of the wrong signature.
+
+**The one thing I should have checked first.** `pnpm test:coverage` was green *and meaningless*.
+Installing `@vitest/coverage-v8` fixed the crash, but the root `vitest.config.ts` had no
+`coverage.thresholds`, so the command measured the whole tree and exited 0 regardless. A DoD box
+checked by assertion is exactly what the box was written to prevent. The threshold now exists,
+is scoped to `services/**` and `packages/shared`, and I verified it fails by raising the floor
+to 100% and watching the exit code change. **A gate that has never been seen to fail is not
+known to be a gate.**
+
+**Later the same day the owner raised the floor to 95% and asked for it in CI, plus a reporter
+that shows only failures.** The floor change immediately failed, on `dateKeyRange` in
+`packages/shared/src/time.ts` — a public helper with no test at all. Six tests now cover it,
+including a DST transition. Measured after: services 98.7%, packages/shared 95%. The reporter
+is `dot` when `CI` is set, `default` locally, overridable with `VITEST_REPORTER`.
+
+**Coverage is 98.7% on services and 95% on packages/shared**, from one real service file and
+one uncovered helper that is now tested. That number is real and it is also not much of a claim:
+it is one service. The threshold matters more as the entity services arrive, and 95% is
+strict enough that a new service with an untested branch will fail the build on the day it is
+written rather than after it has been shipped for a month.
+
+### 2026-09-29 — Session 7: project logger, and an audit of 0.2.0
+
+**The owner's instruction:** one logger class for the whole project, a singleton, logging
+the good path as well as the failures, driven by an env level, writing to a channel, and
+one line format. Then: check 0.2.0's acceptance criteria and make the documentation current.
+
+**The logger.** Two classes, not one shared module, because the owner's decision was that
+backend and frontend have different implementations: `apps/api/src/lib/logger.ts` and
+`apps/web/src/lib/logger.ts`. They deliberately share the **level names and the line
+format** and nothing else. The API's timestamp comes from `nowMs()` (ground rule 4), so a
+test can freeze the clock and assert an exact line; the web one uses `Date.now()` because
+it has no timing behaviour to test and no other module depends on its clock. All 15 existing
+`console.*` call sites were converted, so one `LOG_LEVEL` now controls the whole API.
+
+**Two things the design forced, that are worth remembering.**
+
+- The logger reads `process.env` itself rather than taking its level from `AppConfig`. It
+  cannot do otherwise: `main.ts` reports a `ConfigError` *through* the logger, and a logger
+  that depends on a successfully parsed config cannot log the failure that parsing produced.
+  `configSchema` validates the same variable so a typo is also refused at boot by name.
+- Errors and warnings go to **stderr**, everything else to stdout. That was my call, not the
+  owner's — they said "stdout, use the console APIs", which I read as "the console, not a
+  file or a remote sink". Node routes `console.warn`/`console.error` to fd 2 for free, so
+  `2>errors.log` works; `docker compose logs` shows both. **If the owner wants one stream,
+  this is the line to change**, and it is `CONSOLE_METHOD` in either logger.
+
+**Routing the API through the logger had a side effect worth catching.** `server.ts` logged
+"no frontend build; serving the API only" through Fastify's pino logger, which is off in
+tests, so the message was silent. Through the project logger it printed on every test that
+builds a server, burying real failures under dozens of identical lines. `vitest.config.ts`
+now sets `LOG_LEVEL=silent` unless the environment already sets one, so
+`LOG_LEVEL=debug pnpm test` still shows everything. `migrate.int.test.ts` pins `info` for
+the CLI it spawns, because it asserts on the migrator's real output and silence would have
+made those assertions vacuous.
+
+**The 0.2.0 audit, which is the more important half of this session.** The release is
+**not done**, and the honest answer is that roughly a quarter of it exists:
+
+- **Done (3 of 14 criteria):** the 13 no-delete triggers with an enumeration test
+  (`DATA-10`), `uid` and `archived_at` on every user-data table (`DATA-13`/`DATA-11`), and
+  the five green commands. All schema-layer, all covered by `schema.test.ts` (57 tests).
+- **Half (3):** the 3-link trigger exists but no route returns 422; `todo` has a foreign key
+  and `archived_at` but nothing asserts archiving keeps the entries; `project_id` is
+  nullable but there is no virtual bucket.
+- **Not started (8):** everything needing a service, a route or a component.
+
+`apps/api/src/services/`, `apps/api/src/views/` and `apps/api/src/middleware/` **do not
+exist**. There is no route except `/health`, and the web app is still the 0.1.0 health shell.
+So archive, restore, CRUD, the activity log and the capability map have nowhere to live, and
+**the 0.2.0 exit test cannot be run at all** — it creates projects and tasks through a UI
+that does not exist. `docs/PLAN.md` and the release spec both still said "not started",
+which is now wrong in a different direction, so both were rewritten with the real position.
+
+**Documentation corrected, because each of these was actively misleading:**
+
+- `LOG_LEVEL` was documented in `.env.example` and read correctly, and **did nothing in
+  Docker**, because neither service listed it. This is the bug that passes every test,
+  since no test runs in a container. Now passed to both containers and verified with
+  `docker compose config`.
+- `pnpm test:coverage` was documented in two files as "fails below 80% on business modules",
+  which reads as a working gate. It had never worked: `@vitest/coverage-v8` was not installed.
+  Installed in the Phase 0 session below, matched to the Vitest major — see the gotcha above.
+- `docs/TESTING.md` documented `pnpm test:ui` and `pnpm perf`. Neither script exists.
+- `AGENTS.md` had no mention of logging at all. It now has ground rule 12, a rejected-pattern
+  row for `console` and for logging libraries, a stack-table row, and a Part 12 history entry.
+- `README.md` now documents the line format and `LOG_LEVEL` under Logs.
+
+**Verified, not assumed:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (15 files, 220 tests),
+`pnpm test:int` (3 tests) and `pnpm build` all pass; `docker compose config` resolves
+`LOG_LEVEL` into both services. Zero `delete*` functions, zero `DELETE` routes, zero
+`ON DELETE CASCADE`; 42 test `describe` blocks name a requirement ID; nine external runtime
+dependencies against a target of ten.
+
+**Still open, deliberately not done here:** the eight unimplemented criteria, and whether the
+stderr/stderr split above is what the owner wanted.
 
 ### 2026-09-28 — Session 1: planning only, no code
 
@@ -216,12 +472,19 @@ wrapper over **Umzug 3.8.3**. The SQL files are unchanged and still hand-written
 runner is no longer ours. Recorded as `D-22` and
 [ADR 0009](docs/adr/0009-migration-runner-umzug.md).
 
-**Umzug, not `drizzle-kit`, and the reason matters if this is revisited.** `drizzle-orm` is
-already the query layer, so `drizzle-kit` was the obvious candidate — but it makes the
-*author* of the migration a schema object, which is exactly the auditability trade
-`NFR-MAINT-02` refuses. Umzug only decides who *applies* a migration. If 0.2.0's 15 tables
-make hand-writing SQL painful, the right answer is a generated-SQL review step, not an ORM
-replacing the ledger.
+**Umzug, not `drizzle-kit`, and the reason matters if this is revisited.** `drizzle-kit` was
+the obvious candidate — but it makes the *author* of the migration a schema object, which is
+exactly the auditability trade `NFR-MAINT-02` refuses. Umzug only decides who *applies* a
+migration. If 0.2.0's 15 tables make hand-writing SQL painful, the right answer is a
+generated-SQL review step, not an ORM replacing the ledger.
+
+**`drizzle-orm` was declared for 0.1.0 and never used, then dropped on 2026-09-29.** It
+sat in `apps/api/package.json` with zero imports while `AGENTS.md`, `docs/ROADMAP.md` and
+ADR 0009 all described it as the query layer. The owner dropped it in favour of hand-written
+SQL over `better-sqlite3`, and the docs were corrected to match. Accepted cost: no
+compile-time column checking, so a renamed column is a runtime error caught by tests rather
+than by `tsc`. This closed the `AGENTS.md` rule 10 exception that 0.1.0 shipped with — the
+first release to record an accepted deviation from its own DoD.
 
 **Two things that were not obvious and cost time.**
 
@@ -244,6 +507,51 @@ That is the project's preferred failure mode, and it is cheaper than the code it
 and writes `pre-NNNN` backups; a deliberately broken migration rolls back with no partial
 table, names its backup, and restores; the Docker image builds and reaches `healthy` with
 2 migrations applied, and a container restart applies nothing new.
+
+### 2026-09-29 — Session 6: Full Knex (runner + query layer)
+
+**The owner's instruction:** Knex everywhere. The 0.2.0 repository layer already needed a
+query builder; the owner chose **Full Knex** — Knex runs the migrations too, and
+`knex_migrations` is the only ledger. Umzug was removed from `apps/api/package.json`
+(pnpm dropped 24 transitive packages). Recorded as `D-24` and
+[ADR 0012](docs/adr/0012-migration-runner-knex.md), which supersedes ADR 0009. This also
+moves the data-access layer from the "hand-written SQL over `better-sqlite3`" that the
+drizzle-drop entry above landed on, to Knex — the drizzle-drop still stands, Knex is just
+a thin query builder over the same driver.
+
+**What changed.** The `.sql` migration files (including `0001_schema_migrations.sql`) are
+gone. Migrations are now `NNNN_name.js` ESM modules embedding the reviewed DDL
+byte-identical to the source SQL (verified with a per-file diff at generation time),
+renumbered, and on 2026-09-29 consolidated into a single `0001_initial_schema` (`D-26`). Each runs its DDL in
+one native better-sqlite3 transaction (`disableTransactions: true` so Knex does not wrap
+it), meaning a failed migration leaves no partial schema *and* no ledger row. `migrate.ts`
+keeps the pre-migration `VACUUM INTO` backup, restore-and-abort naming the file, and the
+contiguity check.
+
+**The checksum dropped, and why that is safe here.** `knex_migrations` never carried a
+checksum, so the immutability guarantee was ours to maintain against a ledger that could
+not enforce it. Every migration is `IF NOT EXISTS`, so an edited-and-re-run migration is a
+safe no-op, and the contiguity check still catches a deleted one. The owner accepted this
+explicitly; the trade is written into ADR 0012 so it is never re-made silently.
+
+**Knex quirks that cost time.**
+
+- `migrationSource.getMigrations` must return a **Promise** — Knex's `MigrationSource`
+  type expects `Promise<unknown[]>`, even though `Promise.all` wraps it at runtime. Our
+  first version was sync and `tsc` complained.
+- Knex only `warn`s `migration file "X" failed` and **rethrows the raw SqliteError**, so
+  the runner has to track the failing file via its own `state.active` to name the backup.
+- The ledger stores the **filename including `.js`** (`0001_initial_schema.js`), not just the
+  slug. Keep `FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.js$/` in sync with the naming.
+- After build, the Docker copy step must **mirror** (`rmSync(to)` before `cpSync`), not
+  merge — stale dist files were elsewhere being copied, and since migrations are `.js` now,
+  any leftover `.sql` in `dist` would confuse a future glob.
+
+**Verified, not assumed:** `pnpm lint`, `pnpm typecheck`, `pnpm test` (13 files, 168
+tests) and `pnpm --filter api build` all pass; the built CLI applies `0001`–`0003` to a
+copy of the **real 0.1.0 volume** (all rows and 7 settings preserved), records them in
+`knex_migrations`, and is idempotent on a second run ("up to date, 3 migration(s)
+already applied", exit 0).
 
 ### 2026-09-28 — Session 5: the `pdm-migrate` container
 
@@ -384,6 +692,82 @@ web app had never made a single API call and `App.tsx` claimed otherwise in a co
 
 ---
 
+## 2026-09-29 — URLs are versioned and split in two namespaces (ADR 0013)
+
+The app is now at `http://127.0.0.1:9090/ui/v1/tasks`. JSON moved to `/api/v1`, pages and
+assets to `/ui/v1`, and only `/health`, `/ready` and `/` stayed unprefixed. `/` answers
+308 to the first screen. **No aliases** — `/tasks`, `/api/tasks` and `/ui` are 404.
+
+Three things worth keeping, none of which were obvious beforehand:
+
+**A test asked the question my design had merged.** I first wrote one predicate,
+`isUnprefixedRouteAllowed`, used by both `RouteTable.declare` and the SPA fallback. Those
+need *different* answers: the fallback must allow `/ui/v1/…`, while a declared route must
+**not** include a UI path — a page acquiring a capability guard is a category error, because
+an HTML response has no principal. One function had to be wrong for one of its callers. The
+test "refuses a UI path" failed and the answer was to split them into `isDeclaredRouteAllowed`
+and `isUiPath`. Worth remembering as a shape: *when one helper is passed to two callers,
+check that both callers want the same answer before assuming they do.*
+
+**The old fallback's negative condition was the real defect.** It asked "is this path under
+`/api`", so every *other* unprefixed path was answered with HTML — a mistyped `/tasks`
+returned the entire app shell with a 200, and a client could not tell a wrong URL from a
+right one. Replacing it with the positive `isUiPath` is what actually fixed the bug. The
+version prefix was the vehicle; the ambiguity was the disease.
+
+**Five log labels were missed by a `sed` that only touched declarations.** After moving the
+routes to `/api/v1`, five `logger.debug` labels still read `POST /api/tasks…`, so grepping a
+route in the logs found nothing. A bulk rename of *declarations* does not rename the string
+in a log line in the next two lines of code. **Grep for the old literal afterwards, in every
+file it touched, not only in the lines you edited.**
+
+Also learned here: two of the "defects" I chased while smoke-testing against the live
+container were my own probe artifacts, not bugs — a 422 on archiving an already-archived task
+is correct refusal (FR-TASK-13), and a 404 on an archived task's history is pre-existing
+archived-filtering behaviour, unchanged on `HEAD`. The general lesson stands and matches an
+earlier entry in this file: **verify against the committed code before calling something a
+regression**, or you "fix" correct behaviour and add the opposite assertion to the suite.
+
+---
+
+## 2026-09-30 — Plumbing is now gated at 80% too, and the gate has a hole worth naming
+
+Owner decision: `repositories/**`, `middleware/**`, `routes/**` and `lib/**` are now gated at
+**80%**, not merely measured. `pnpm test:coverage` was reporting them and letting them slide.
+
+This **overrides a judgement recorded in `vitest.config.ts` the day before**, which argued
+against gating them: *"a repository is a query, and a query is verified by the service test
+that uses it; measuring it separately would push tests to exist for coverage's sake."* The
+owner overruled that on the grounds that an ungated number is one that can collapse unnoticed,
+and that "the service test covers it" stays true right up until somebody adds a branch nobody
+exercises. Reasonable. The config comment was rewritten to say so rather than left describing
+a rule the file no longer had — the same stale-comment failure the project has been bitten by
+twice now, once in `ROADMAP.md` and once in the ADR 0009 / drizzle-orm description.
+
+**What the gate does not do, established by running it rather than assumed:** a Vitest glob
+threshold applies to the **aggregate** of the files matching the glob, not to each file. So
+`middleware/error.ts` sits at **76.47% statements and 66.66% functions** and the 80% gate is
+perfectly happy, because `middleware/**` averages 83.05%. Every group passes today, so the
+gate is real — but it is a **group** gate, and one weak file can hide behind healthy
+colleagues. Stated in `vitest.config.ts`, `AGENTS.md` Part 9 and here, because a threshold
+whose strength is misjudged is worse than one that is honestly low.
+
+Closing the hole is not free, which is why it is left to the owner:
+
+| Option | Cost |
+| --- | --- |
+| `thresholds.perFile: true` | Applies to **both** floors, so the 95% business floor then fails on `closure.service.ts` (94.77%) and `time.ts` branches (92.85%). Would mean adding those tests *or* lowering 95%. |
+| Per-file thresholds listed by hand | Verbose and drifts as files are added; nothing fails when a new file appears unlisted. |
+| Leave it | The group average is a real signal, just a coarser one. Weakest file today is 66.66% functions. |
+
+**Also fixed here:** `AGENTS.md` Part 9 still said "≥80% on `services/**` and `packages/shared`"
+in the testing section, and the command list said "fails below 95% on business modules". The
+first had been wrong since 2026-09-29, when the owner raised that floor to 95% — the doc and
+the config had disagreed for a day and the test suite could not tell, because nothing asserts
+that documentation matches configuration. Both now state both floors.
+
+---
+
 ## Open threads
 
 Things a future session should not have to rediscover. Checked and ticked when done.
@@ -396,6 +780,63 @@ Things a future session should not have to rediscover. Checked and ticked when d
 - [x] **`better-sqlite3` builds correctly**: `onlyBuiltDependencies` and `allowBuilds` are set
       in `pnpm-workspace.yaml` (pnpm 11 ignores a `pnpm` field in `package.json`). Note the
       docs still describe the old `package.json` form in places.
+- [x] **0.2.0 has its foundation but not its entities.** The schema is complete and tested, and
+      the three layers now exist: `apps/api/src/{lib,middleware,routes,repositories,services}/`,
+      with the error envelope, the principal seam, the declared-route table, the activity log
+      and the first service. Still missing: `apps/api/src/views/`, the entity services
+      (project, task, todo, tag, link, acceptance criteria), every route but `/health`, and the
+      whole web UI beyond the 0.1.0 health shell. **5 of 14 acceptance criteria are done, 5 are
+      half, 4 are not started. The exit test still cannot be run**, because it drives a UI.
+      Full breakdown in [`docs/RELEASES/v0.2.0.md`](docs/RELEASES/v0.2.0.md). The next session
+      that touches 0.2.0 should start with the entity services and routes, not more foundation.
+- [x] **Entity services, routes and screens all landed** (project, task, todo, tag, link,
+      criteria, reference), so the release's criteria are met and the exit test is runnable. The
+      URL scheme was split and versioned the same day — see the 2026-09-29 entry above and
+      ADR 0013 — which changed every URL in the app, the tests and the exit-test script. Still
+      outstanding for the release: **0.2.0 has no upgrade path from 0.1.0** (`D-26`), so a
+      `data/` directory from 0.1.0 is discarded and recreated, and `apps/api/src/views/` is
+      still absent because nothing stores a total.
+- [ ] **`GET /api/v1/tasks/:id/history` cannot be read for an archived task.** The route reads
+      through `services.tasks.get(id)`, which filters `archived_at IS NULL`, so history for an
+      archived task is a 404. Behaviour is identical on `HEAD`, so this is **pre-existing and
+      not a regression** — but it means "every status change is logged, newest-first" is not
+      reachable once a task is archived, which the criterion's wording implies. Either the
+      history route should read through an archive-aware lookup, or the criterion should say
+      history is for live tasks only. Cheap either way; undecided, so left alone.
+- [x] **`docker compose up` needed a `sleep` before curling** — the fix is
+      `docker compose up -d --wait --wait-timeout 60`, which blocks until the
+      health check passes. Verified working 2026-09-30 and used in place of a
+      fixed sleep. The exit-test script in `docs/RELEASES/v0.2.0.md` should use it
+      too rather than telling the owner to guess when the port is ready.
+- [x] **`pnpm test:coverage` works *and* gates.** `@vitest/coverage-v8@2.1.9` installed as a root
+      devDependency on 2026-09-29, matched to the repo's Vitest major. Installed unpinned it
+      pulls v5 and dies with `vitest/node does not provide an export named
+      'BaseCoverageProvider'`. The **95%** floor (raised from 80% by owner decision) is a
+      `thresholds` block in `vitest.config.ts`, so the command fails below it — verified by raising it to 100% and
+      watching it exit 1. Services 98.7%, packages/shared 95%. Raising the floor from 80% to
+      95% exposed `dateKeyRange` in `time.ts` having no test at all; it has six now.
+- [x] **CI runs `pnpm test:coverage` as its own step** after `Test`, and the reporter is `dot`
+      when `CI` is set, `default` locally, `VITEST_REPORTER` to override. `dot`, not `silent` —
+      `silent` prints the failures too, which is the opposite of the point. The `gates` job
+      timeout went 15 → 20 min to absorb the extra suite run.
+- [ ] **A route audit that runs in `onReady` cannot be tested against a `ready` app.** Fastify
+      refuses `app.get(...)` and `app.addHook(...)` on an instance that has been readied —
+      `Fastify instance is already listening. Cannot add route!` — so a test that wants to
+      register an undeclared route and observe the audit failing has to own the `ready()`
+      call itself. `createTestApp({ deferReady: true })` is the seam. Cost me three test
+      failures that were all the same mistake, in three different forms.
+- [ ] **`@fastify/static` registers routes the audit would otherwise reject.** One route per
+      built file, with no capability declaration, so a real frontend build would make the app
+      refuse to boot. The exemption keys on `config.file` and `config.rootPath`, both present,
+      and the audit also skips `HEAD` when `GET` is declared. Do not "simplify" this away: the
+      test that covers it is in `routes/table.test.ts`.
+- [ ] **The stderr/stdout split in the logger is my call, not the owner's.** `warn` and
+      `error` go to `console.warn`/`console.error` (fd 2), everything else to stdout. If the
+      owner wants one stream, it is `CONSOLE_METHOD` in `apps/api/src/lib/logger.ts` and the
+      same constant in `apps/web/src/lib/logger.ts`.
+- [ ] **`pnpm test:ui` and `pnpm perf` were documented in `docs/TESTING.md` but do not
+      exist.** Removed from the doc on 2026-09-29. If either was meant to exist, it needs
+      writing; nothing references them.
 - [ ] **Eight open questions** (`OQ-1`…`OQ-8` in `docs/ROADMAP.md` §9) all have stated
       defaults so nothing is blocked. The two worth an answer when convenient: `OQ-1`, is
       MCP in scope for 1.0.0; `OQ-5`, the real office timesheet text format.
@@ -408,6 +849,112 @@ Things a future session should not have to rediscover. Checked and ticked when d
       runs as a non-root user and a fresh host folder will be root-owned.
 - [ ] **No release has been tagged yet.** The first is `v0.1.0`, and the rules are in
       `VERSIONING.md`.
+
+## Lessons from 2026-09-29 (the Docker verification)
+
+- [x] **The image bakes in the migrations, so `docker compose up` alone migrates nothing
+      new.** The container was still on the old migration files after a new one was
+      written, and `/health` reported `pending: 0` and was wrong — the pending count is
+      computed against the container's own migrations directory, so a stale image reports
+      "nothing pending" while the database is out of date. `pending: 0` proves nothing
+      about whether the build is current. **Always `docker compose build` then
+      `docker compose up -d`.**
+- [x] **Never run a probe that writes against the live data volume.** A `DELETE` test
+      inserted `probe-1` into the real `tasks` table, and because the no-delete trigger
+      refused the cleanup, the row stayed. It had to be archived rather than deleted,
+      because the rule that blocked the cleanup is the same rule that says a row is never
+      removed. A probe that cannot run against a temp database should not touch the
+      owner's data at all.
+- [x] **A clean run is not an upgrade.** Every test migrated an empty file, which is why
+      a dead 0.1.0 ledger survived a release whose spec said it was gone. Fixed by
+      deciding not to support the upgrade at all (`D-26`), not by patching it.
+- [x] **The migrator's contract is now verified end to end,** including the failure path:
+      a deliberately broken migration exits 1, names itself and the SQL error, restores
+      its backup, rolls back the partial schema, and `pdm` does not start.
+- [x] **The three migrations are now one, `0001_initial_schema`.** They carried version
+      numbers in their own comments (`-- 0002:`, `-- 0003:`, `-- 0004:`) that no longer
+      matched their filenames after the `D-24` renumbering. Nobody had opened them since.
+      **The next migration is `0002`.**
+
+- [x] **2026-09-30: the project domain is usable end to end.** Repository, service,
+      declared routes and `/projects` screen are done; archive/restore write history in
+      the same transaction; default lists hide archived rows. Tasks, tags and the exit
+      test remain unbuilt.
+- [x] **Do not trust Knex `.returning()` to have one shape.** With `better-sqlite3`
+      it returned an object where a number was expected, so the first project insert
+      produced `entity_id: NaN` in `activity_log`. The repository now reads the new id
+      back through the row's unique `uid` in the same transaction.
+- [x] **Docker Desktop was not running for the final project-slice check.** Local
+      gates are green (`370` unit, `3` integration, coverage, build, compose config),
+      but the rebuilt container serving `/projects` still needs one `docker compose
+      build && up` verification when the daemon is back.
+
+- [x] **2026-09-30: the task core slice is done.** Repository with the
+      project-aware archive filter, service with status moves and `started_at`,
+      declared routes, `/tasks` screen with the “No project” bucket. Two lessons:
+      a new API route can collide with an existing test's example path
+      (`/tasks/42` in the SPA-fallback test became a 403 — the test now uses an
+      unclaimed path and says so), and dead-by-construction guards
+      (`if (!updated)` after a same-transaction load, where the no-delete trigger
+      makes the row unremovable) get `/* v8 ignore next */` with a why-comment
+      rather than tests that cannot exist. Six of them, three per service.
+- [x] **Docker Desktop is still not running.** The rebuilt container serving
+      `/tasks` still needs one `docker compose build && up` verification when the
+      daemon is back. This is the second slice in a row blocked on it.
+
+- [x] **2026-09-30: the todo slice is done.** Service, routes and the task detail
+      page with the phases section. Two details worth reusing: reorder takes the
+      complete order and fails closed on a missing or foreign id, because a move
+      with the rest left to guess drops phases; restore appends at the end
+      because positions freed while archived get reused. And a static-markup test
+      of a component that renders a `Link` needs a `MemoryRouter`, or it fails
+      only in the full suite — which is how a green targeted run hid it until
+      the gates ran.
+
+- [x] **2026-09-30: the links slice is done, and criterion 1 with it.** The slot
+      detail that earned its test: archiving link 1 of 3 then adding a link must
+      reuse slot 1, not take slot 4 past the unique index — positions are
+      smallest-free, never count-plus-one. Restore keeps its old slot when free
+      and refuses naming the limit when all three are taken, because restoring
+      past the trigger would fail as a constraint error instead.
+
+- [x] **2026-09-30: the criteria slice is done.** Same shape as todos, minus the
+      done flag. Two test-writing lessons from its suite: fixture text is part
+      of the assertion surface — a criterion reading “Nothing is deleted”
+      contains “delete” and fails the no-Delete check — and an assertion must
+      target what its requirement means, not its shadow: “no tick box” forbids
+      the per-criterion `Mark` control, not the Show-archived toggle that
+      happens to be a checkbox. Both were the test overreaching, not the code
+      misbehaving.
+
+- [x] **2026-09-30: the references slice is done; tags are the last domain.**
+      One decision worth reusing: an empty optional URL field converts to `null`
+      at the page boundary, because a blank string in the URL column is a link
+      to nothing that still renders as a link. `null` means “no URL” and the
+      schema refuses blank, so all three states stay distinct.
+
+- [x] **2026-09-30: the tags slice is done — the last 0.2.0 domain.** One live
+      tag per name, clashes fail naming the tag, restore refuses a taken name.
+      New `tag:read`/`tag:create`/`tag:update` capabilities; `tag:update` is in
+      the MCP-14 absence test with the other mutating capabilities. Honest gap
+      recorded in the release spec: exit-test step 5's “apply one to a task's
+      tags” needs time entries, which nothing writes until 0.3.0.
+
+- [x] **2026-09-30: driving the live container found two production-only bugs,
+      and both were invisible for the same reason.** No test builds a server the
+      way production does — with a web build present and no principal resolver —
+      so (1) every API route 403'd because no resolver was ever installed, and
+      (2) the SPA fallback answered DELETE with 200 and HTML. Both are fixed
+      with regression tests that fail with the fix reverted, and the exit test
+      was driven against the live container end to end (steps 1–4, 6–10; step
+      5's apply-half waits for 0.3.0). **The lesson: a test suite in which every
+      test installs its own wiring proves nothing about the wiring production
+      uses.** At least one test must build the app exactly as boot does.
+- [x] **Exit step 8 needed a history route that did not exist.** History was
+      written on every change and visible nowhere, so `GET /tasks/:id/history`
+      now reads it back and the detail page renders it. The gap survived
+      because the criterion said “records” and the exit test said “open” — the
+      write half was done and the read half was never scoped.
 
 ## If you remember one thing
 

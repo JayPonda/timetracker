@@ -57,6 +57,10 @@ END;
 shadow tables. `reminder_deliveries` and `mcp_audit_log` are append-only by convention
 and are trimmed by retention, not by user action.
 
+*Addendum, 2026-09-29 (ADR 0012): the migration ledger `schema_migrations` became Knex's
+`knex_migrations` and `knex_migrations_lock`. The exemption principle is unchanged; the
+new names are what the test checks.*
+
 **No `ON DELETE CASCADE` anywhere.** `PRAGMA foreign_keys=ON` on every connection. A
 child row therefore cannot disappear because its parent did — and it cannot, because the
 parent cannot disappear either. Archiving keeps the whole graph intact and queryable.

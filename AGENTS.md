@@ -78,16 +78,26 @@ before 1.0.0.
 
 ---
 
-## Part 2 — The eleven ground rules
+## Part 2 — The twelve ground rules
 
 These are not style preferences. Each one exists because breaking it makes a specific
 requirement untestable. Breaking one is a defect.
 
 ### 1. One write path
 
-Business-rule mutations happen in `apps/api/src/services/**`. Route handlers do HTTP
-plumbing: parse, validate, authorise, call a service, shape a response. **No SQL and no
-business rules in a route.**
+A write travels **route → service → repository → Knex**, and only in that direction.
+
+- A **route** does HTTP plumbing: parse, validate, authorise, call a service, shape a
+  response. No SQL and no business rules.
+- A **service** holds the business rule and owns the transaction. It is the only thing that
+  decides what a mutation means.
+- A **repository** holds the query. Knex, and nothing else. No business rules, and no
+  knowledge of *why* the query runs.
+
+The service layer is the only entry point to a write. A repository is never called from a
+route, and never decides anything. **The layer was added on 2026-09-29 (`D-25`)**: `knex.ts`
+and ADR 0012 both described a three-layer split that this file's layout did not contain, and
+rather than delete one of them the owner confirmed three layers and the layout was corrected.
 
 This one rule is what makes three of the project's hardest requirements provable:
 
@@ -108,8 +118,11 @@ No `delete*` function. No `DELETE` route. No `db.delete()`. No Delete button in 
 `ON DELETE CASCADE` anywhere. Removal sets `archived_at` through an `archive*` service
 function that also writes `activity_log`.
 
-The database additionally blocks hard deletes with `BEFORE DELETE` triggers on the 13
-user-data tables, so a bug cannot erase data either.
+The database additionally blocks hard deletes with `BEFORE DELETE` triggers on 14 of the
+15 user-data tables, so a bug cannot erase data either. The exemption is `time_entry_tags`,
+a pure join with no independent identity, plus the `knex_migrations*` ledger, which is not
+user data. Measured against a migrated database on 2026-09-29; this line said "13" until
+then, and the count in `schema.test.ts` was right while the prose was wrong.
 
 `DATA-09`, `DATA-10`, `BR-13`. Full reasoning and the exemption list:
 `docs/adr/0002-no-delete-and-archival.md`.
@@ -179,6 +192,109 @@ describe('FR-GATE-05: an unmet criterion requires a lagging reason', () => { ...
 The test name is documentation that cannot go stale, because it is checked against the SRS
 in review.
 
+### 12. One logger, used everywhere. No `console`
+
+Every line of application output goes through the `Logger` class, and every call site
+passes its own file and function name:
+
+```ts
+logger.info('timer.service.ts', 'start', 'timer started', { task_id: 42, todo_id: 7 });
+```
+
+```text
+[2026-09-29T08:26:23.571Z] [INFO] (timer.service.ts) (start) timer started task_id=42 todo_id=7
+```
+
+`[datetime] [level] (file/class) (method/function) message key=value key1=value2`
+
+Four things follow from this, and breaking any of them costs something real:
+
+1. **The whole application is one `LOG_LEVEL`.** Setting it reveals or silences
+   everything at once. A codebase with ad-hoc `console` calls cannot answer "what
+   was this process doing", because a third of its output went somewhere nobody
+   looked.
+2. **Every level is used, not just `error`.** `trace`, `debug` and `info` are how
+   the *good* path is recorded, which is the point: a log that captures only
+   failures cannot answer "what happened at 14:03, and which branch did it take".
+   `info` is where a milestone belongs — boot, listen, backup written, timer
+   started.
+3. **The format never varies.** One shape means `grep '\[ERROR\]'`,
+   `grep 'task_id=42'` and a log line from the browser and one from the container
+   are read the same way.
+4. **Rendering cannot throw.** A circular reference prints `[Circular]`, an
+   unserialisable value `[Unserializable]`, and a channel that throws is
+   swallowed. A logger that takes down its caller is worse than no log.
+
+The API logger reads `nowMs()` for its timestamp, like everything else (ground
+rule 4), so a test can freeze the clock and assert on an exact line.
+
+**The level comes from the environment, but not from `AppConfig`.** The API reads
+`LOG_LEVEL`; the browser reads `VITE_LOG_LEVEL`, because Vite only exposes
+`VITE_`-prefixed variables to a bundle and an unprefixed name would be
+`undefined` in the browser *by construction* — it would look configured and log
+at the default. A logger that took its level from a successfully parsed config
+could not log the failure that parsing produced, so it reads the variable itself
+and `configSchema` validates the same one to catch a typo by name at boot.
+
+See `apps/api/src/lib/logger.ts` and `apps/web/src/lib/logger.ts`. Two classes,
+not one shared one: they run in different worlds, and what they deliberately share
+is the level names and the line format.
+
+**Renaming a path renames it everywhere, and "everywhere" is wider than the file
+you edited.** Moving a route from `/tasks` to `/api/v1/tasks` rewrote the
+declarations, the fetches and the tests in one pass — and left five
+`logger.debug` labels reading `POST /api/tasks…` in the lines *below* each
+declaration. A `sed` over declarations does not touch the string two lines down
+that says the same path to a human. The consequence is not a crash: it is a
+`grep 'task_id=42'` that finds nothing while the request plainly worked, which
+is the failure mode ground rule 12 exists to prevent.
+
+So: **after any bulk rename, grep the old literal again, in every file it
+touched** — not only the lines the edit reports. `grep -rn "'/api/tasks" apps/`
+took two seconds and found five defects that the test suite rated as green.
+
+### 13. One helper, two callers, two answers
+
+A predicate shared by two call sites is only correct if both callers actually
+want the same answer. Check that before assuming it, because a shared helper
+that has to compromise answers *wrongly* for somebody, silently, and the
+compromise will be written to suit whichever caller was easier to satisfy.
+
+The instance this project paid for, 2026-09-29: the URL scheme
+(`docs/adr/0013-versioned-url-namespaces.md`) needed to ask two questions.
+
+| Question | Answer for `/ui/v1/tasks` |
+| --- | --- |
+| May this URL be **declared** as a route? | **No** — pages are served by the static mount |
+| May this **request** be answered with the app shell? | **Yes** — it is the UI |
+
+One function, `isUnprefixedRouteAllowed`, served both. It had to return `true`
+for the fallback and `false` for the table, so it returned `true` and the route
+table quietly accepted a UI route as a declared one. The split is now
+`isDeclaredRouteAllowed` and `isUiPath`, one caller each.
+
+Why the asymmetry is right, and why it is worth the extra function: a declared
+route acquires a capability guard, and **an HTML response has no principal to
+guard**. Letting a page become a declared route is a category error, not a
+stylistic one — it is the same reasoning that keeps business rules out of
+repositories, expressed about a different layer.
+
+Two rules follow:
+
+- **Two questions that sound alike are not the same question.** "Can this be
+  X?" and "should this be X?" diverge more often than they agree. If you find
+  yourself adding a caller to an existing predicate, check whether the new caller
+  wants a different answer before reusing it.
+- **A test that asks an awkward question is design information.** The test that
+  caught this — *"refuses a UI path, because pages are served by the static mount
+  not declared"* — was written before the implementation was finished and failed
+  on the first run. **A failing test that encodes a rule you have not written down
+  is usually the design telling you its shape**, and is worth reading as a
+  question rather than debugging away.
+
+The same instinct as ground rules 1 and 11: the guarantee belongs in one place,
+and two places that need different answers get two places.
+
 ---
 
 ## Part 3 — Setup from zero
@@ -246,13 +362,12 @@ pnpm dev                      # migrate, then API and web dev servers
 pnpm build                    # build all workspaces
 pnpm lint                     # ESLint
 pnpm lint:fix                 # ESLint with autofix
-pnpm format                   # Prettier write
 pnpm typecheck                # tsc --noEmit across workspaces
 
 # Tests
 pnpm test                     # everything, once
 pnpm test:watch               # watch mode
-pnpm test:coverage            # fails below 80% on business modules
+pnpm test:coverage            # fails below the floors: 95% business, 80% plumbing
 pnpm test:int                 # integration: SSE, migrations, backup and restore
 pnpm test:e2e                 # Playwright (from 1.0.0)
 pnpm test -t 'FR-GATE-05'     # one requirement's tests
@@ -290,7 +405,7 @@ unless the migrator exited 0. Two consequences worth knowing:
 - **The application refuses to boot against an un-migrated schema.** It does not apply
   migrations itself; it checks and throws `SchemaNotReadyError`. If you see that error,
   run `docker compose up -d` or `pnpm migrate`, not a manual fix.
-- **A migration is baked into the image.** Adding a `.sql` file requires
+- **A migration is baked into the image.** Adding a `.js` migration file requires
   `docker compose build` before `up`, or the container will not see it. This is deliberate:
   the schema is tied to the build that expects it.
 
@@ -316,7 +431,8 @@ apps/api/               Fastify REST API, migrations, scheduler, static serving 
   src/
     config/             Environment parsing. One zod-validated object, read at boot.
     db/                 Connection, pragmas, migration runner, seed scripts
-    services/           Business rules. The ONLY place that writes to the database.
+    repositories/       Queries only. Knex, and no business rules.
+    services/           Business rules. The ONLY place that calls a repository to write.
     routes/             HTTP plumbing only. No SQL. No business rules.
     views/              SQL views for every total
     scheduler/          The reminder loop (from 0.7.0)
@@ -333,7 +449,8 @@ data/                   The live database, on the owner's disk        (git-ignor
 backups/                Automatic and manual backups                 (git-ignored)
 ```
 
-The **service / route split is the most important structural rule in the repository.** If
+The **route / service / repository split is the most important structural rule in the
+repository.** If
 you find yourself wanting to write SQL in a route, the thing you want is a service function.
 
 ---
@@ -348,11 +465,12 @@ you find yourself wanting to write SQL in a route, the thing you want is a servi
 | API | Fastify | Schema validation, `app.inject()` for network-free tests |
 | Database | SQLite via `better-sqlite3` | Synchronous, so transactions are trivially correct |
 | Pragmas | `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL` | WAL for `NFR-REL-01` |
-| Data access | Drizzle ORM for typed queries, hand-written SQL migrations run by Umzug | Migrations stay auditable; the runner is not ours to maintain (ADR 0009) |
+| Data access | Knex query builder and Knex-run migrations over `better-sqlite3` | One way to write queries, not two. `NNNN_name.js` migrations embed the reviewed SQL; the wrapper keeps backup, restore-and-abort and contiguity, and `knex_migrations` is the only ledger (ADR 0012) |
 | Frontend | Vite + React + React Router + TanStack Query + Tailwind | Static build served by the same process |
 | Monorepo | pnpm workspaces | `onlyBuiltDependencies` required — see Part 3 |
 | Scheduler | In-process loop, 1-second tick | Writes only when it actually fires something |
 | Alerts | SSE + Notifications API + in-app popup + WebAudio sound | No asset files, therefore no CDN |
+| Logging | Own `Logger` class, one per app, console channel | No dependency. One `LOG_LEVEL` for the whole process, one line format (ground rule 12) |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP and stdio | Never touches the database file |
 | Tests | Vitest; Playwright from 1.0.0 | `app.inject()` needs no port |
 
@@ -364,7 +482,7 @@ These are not application logic; they are constraints, so no bug can violate the
 | --- | --- | --- |
 | At most one running timer | `CREATE UNIQUE INDEX ... ON time_entries((1)) WHERE ended_at IS NULL` | `DATA-02` |
 | At most 3 links per task | `BEFORE INSERT` trigger on `task_links` | `DATA-01`, `BR-04` |
-| No hard delete of user data | `BEFORE DELETE` trigger on 13 tables | `DATA-10` |
+| No hard delete of user data | `BEFORE DELETE` trigger on 14 of 15 tables | `DATA-10` |
 | No cascading delete | No `ON DELETE CASCADE` anywhere, `foreign_keys=ON` | `DATA-10` |
 | A reminder occurrence is delivered once | `UNIQUE (reminder_id, occurrence_at)` on the delivery ledger | `FR-REM-10` |
 | An ended task has a closure record | Enforced in the close service, in one transaction | `DATA-03` |
@@ -406,19 +524,22 @@ breaking migration. This is the agreed shape, not yet created.
 | `closure_criterion_results` | Snapshot of each criterion at closure | Text is copied, not referenced, so history stays truthful |
 | `time_entries` | One span of tracked time | One open row at a time; archived, never deleted |
 | `tags` | Labels on entries | Unique name; archived, never deleted |
-| `time_entry_tags` | Many-to-many | |
+| `time_entry_tags` | Many-to-many | **No `uid`, no `archived_at`, no delete trigger** — a pure join with no independent identity |
 | `reference_materials` | Notes, links, snippets, lessons, decisions | Kept after a task ends |
 | `calendar_events` | Events | Repeats expanded when displayed |
 | `reminders` | "Remind me at", plus per-event reminders | |
 | `settings` | Key and value | Written with defaults on first boot |
 | `activity_log` | The task history | Every status change and every post-closure edit |
 
-Derived and system tables, exempt from the no-delete triggers: `schema_migrations`,
-`search_documents` and its FTS5 index, `reminder_deliveries`, `mcp_tokens`,
-`mcp_audit_log`.
+Derived and system tables, exempt from the no-delete triggers: `knex_migrations`,
+`knex_migrations_lock`, `search_documents` and its FTS5 index, `reminder_deliveries`,
+`mcp_tokens`, `mcp_audit_log`. Only the first two exist today; the rest arrive with
+search (0.8.0), reminders (0.7.0) and the MCP server (0.10.0).
 
-Every user-data table carries `uid TEXT NOT NULL UNIQUE` and `archived_at INTEGER NULL`,
-plus `created_at` and `updated_at` as epoch milliseconds.
+Of the 15 user-data tables, **14 carry `uid TEXT NOT NULL UNIQUE`** (`time_entry_tags` is
+exempt) and **13 carry `archived_at`** (`time_entry_tags` and `activity_log` are exempt;
+an append-only log that could be archived is a log that could be hidden). Every table
+also carries `created_at` and `updated_at` as epoch milliseconds.
 
 ---
 
@@ -523,7 +644,14 @@ Full detail in `docs/TESTING.md`. The essentials:
 - Freeze the clock through `nowMs()`. **Never `await new Promise(setTimeout)`** in a test.
 - One behaviour per test. If the name contains "and", split it.
 - Service unit tests for rules; `app.inject()` for routes; no network, no ports.
-- ≥80% coverage on `apps/api/src/services/**` and `packages/shared`, enforced in CI.
+- Coverage floors, both enforced by `pnpm test:coverage`:
+  - **≥95%** on `apps/api/src/services/**` and `packages/shared` — the business rules
+  - **≥80%** on `apps/api/src/{repositories,middleware,routes,lib}/**` — the plumbing
+  - Scaffolding (`App.tsx`, `main.tsx`, `version.ts`) is excluded, because a floor that
+    scaffolding can break is a floor people learn to ignore.
+  - **Known limitation:** a glob threshold applies to the *aggregate* of the files
+    matching it, not per file. `middleware/error.ts` is at 76.47% statements today and
+    the gate does not notice, because its group averages 83.05%.
 - A bug fix comes with a test that fails without the fix, named after the requirement that
   was broken.
 
@@ -535,8 +663,11 @@ the release that must first write it. That list, not a coverage number, is the q
 ## Part 10 — Style
 
 - TypeScript strict mode everywhere. No `any` without a comment saying why.
-- Server: 2-space indent, single quotes, semicolons, trailing commas. Prettier is the
-  authority; do not argue with it.
+- Server: 2-space indent, single quotes, semicolons, trailing commas. **ESLint is the
+  authority** (`@stylistic` in `eslint.config.js`); do not argue with it. Prettier was
+  removed on 2026-09-29 because it produced noise rather than consistency: it reflowed
+  every table in `ROADMAP.md` — 305 changed lines around a one-line edit — and
+  reformatted files a change had never touched. `pnpm lint:fix` is the formatter.
 - Named exports, not default exports, except React components.
 - Comments explain **why**, never **what**. No commented-out code.
 - No emojis in source. Plain language in the interface — Task, Todo, Acceptance criteria,
@@ -566,6 +697,8 @@ an ADR, not a matter of style.
 | Enforcing the assistant's limits in the MCP server | `MCP-14` says "whatever the MCP server sends". The limit belongs in the app. |
 | Mounting the database into the MCP container | `MCP-03`. The assistant must go through the API so the rules are enforced once. |
 | A cache, a pre-aggregated rollup, or a read replica | A second source of truth. `DATA-04` exists to prevent exactly this. |
+| `console.log` / `console.error` called directly | Ground rule 12. A line that bypasses the logger has no level, so no single setting can silence it, and no file or function name, so it cannot be traced |
+| A logging dependency (pino, winston, bunyan) | ~50 lines and zero dependencies gets the same thing, on the level names and format this project already documents. The dependency is a permanent supply-chain cost for no user-visible gain — the same argument that removed `umzug` |
 | An `OFFSET` based page | Re-reads skipped rows on every page. Use a cursor. |
 | A charting library | Two or three charts, one large dependency, and the bundle is paid on every page load. |
 | Pagination or caching added "just in case" | `R6` is scope. Add it when a measurement in `docs/PERF.md` says so. |
@@ -606,4 +739,7 @@ would create two places to keep in sync — the exact problem `DATA-04` exists t
 
 | Date | Change |
 | --- | --- |
+| 2026-09-29 | Removed Prettier; `@stylistic` inside ESLint does the formatting. Triggered by watching `prettier --write` reflow 305 lines of `ROADMAP.md` and reformat a test file nobody had edited. `pnpm lint:fix` replaces `pnpm format`. |
 | 2026-09-28 | Rewritten in full, from the beginning, as the project constitution. Standardised on pnpm (was inconsistently documented as npm in ADR 0001). |
+| 2026-09-29 | Added ground rule 13, one helper two callers two answers, after the URL scheme needed one predicate to say both yes and no. Triggered by a test asking whether a UI path may be declared as a route — it may not, and the same path must still be served, so the shared predicate had to be wrong for one caller. |
+| 2026-09-29 | Added ground rule 12, the one logger, and recorded why the browser reads `VITE_LOG_LEVEL` while the API reads `LOG_LEVEL`. Triggered by adding the logger and finding that an unprefixed name in a Vite bundle is `undefined` by construction — it looks configured and logs at the default. |

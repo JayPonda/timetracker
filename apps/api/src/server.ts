@@ -1,16 +1,65 @@
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Database as Db } from 'better-sqlite3';
-import { ERROR_CODES, nowMs, type ErrorEnvelope, type HealthResponse } from '@pdm/shared';
+import type { Knex } from 'knex';
+import { nowMs, UI_V1 } from '@pdm/shared';
 import type { AppConfig } from './config/index.js';
-import { migrationStatus } from './db/migrate.js';
-import { VERSION } from './version.js';
+import { logger } from './lib/logger.js';
+import { registerErrorEnvelope } from './middleware/error.js';
+import {
+  decoratePrincipal,
+  defaultPrincipalResolver,
+  type PrincipalResolver,
+} from './middleware/principal.js';
+import { decorateServices } from './middleware/services.js';
+import { registerRequestId } from './middleware/request-id.js';
+import { createActivityLogService } from './services/activity-log.service.js';
+import { createProjectService } from './services/project.service.js';
+import { createTaskService } from './services/task.service.js';
+import { createTodoService } from './services/todo.service.js';
+import { createTaskLinkService } from './services/task-link.service.js';
+import { createCriterionService } from './services/criterion.service.js';
+import { createReferenceService } from './services/reference.service.js';
+import { createTagService } from './services/tag.service.js';
+import { healthRoute } from './routes/health.js';
+import { readyRoute } from './routes/ready.js';
+import { rootRoute } from './routes/root.js';
+import { projectRoutes } from './routes/projects.js';
+import { taskRoutes } from './routes/tasks.js';
+import { todoRoutes } from './routes/todos.js';
+import { taskLinkRoutes } from './routes/task-links.js';
+import { criterionRoutes } from './routes/criteria.js';
+import { referenceRoutes } from './routes/references.js';
+import { tagRoutes } from './routes/tags.js';
+import { registerRoutes, RouteTable, type RouteDeclaration } from './routes/table.js';
 
 export interface CreateServerOptions {
   config: AppConfig;
+  /** better-sqlite3, used by the migration check and the health probe. */
   db: Db;
+  /** Knex, used by every repository. Repositories never touch the driver directly. */
+  knex: Knex;
+  /**
+   * Overridable so a test can install a principal that lacks a capability
+   * (criterion 12). Unset means the default resolver — the local user — which
+   * is what production runs: without it every guarded route refuses with 403
+   * and the interface can do nothing, a failure no test caught until a live
+   * container was driven for the first time.
+   */
+  principalResolver?: PrincipalResolver;
+  /**
+   * Extra declared routes, merged into the table.
+   *
+   * Exists because a test cannot add a route after `createServer` returns:
+   * Fastify refuses `addHook` once the instance is ready, and `createServer`
+   * finishes by calling `ready` for the static plugin. A test that needs a route
+   * with a particular capability declares it here, so it goes through the same
+   * table, the same guard and the same audit as a production route. Anything else
+   * would test a copy of the guard rather than the guard.
+   */
+  extraRoutes?: readonly RouteDeclaration[];
 }
 
 /**
@@ -18,28 +67,65 @@ export interface CreateServerOptions {
  *
  * One process serves the API and the built frontend, so there is no proxy and no
  * CORS to get wrong (ADR 0001). The frontend's own files are static; every API
- * route is registered before the SPA fallback, so `/health` can never be shadowed
- * by `index.html`.
+ * route is registered through the route table **before** the SPA fallback, so
+ * `/health` can never be shadowed by `index.html`.
+ *
+ * Registration order is not arbitrary:
+ *
+ * 1. request id, so every later log line and error envelope can carry it;
+ * 2. the principal default, so no route can observe an undefined principal;
+ * 3. the error envelope, so a refusal from a capability guard is rendered by the
+ *    same handler as every other failure;
+ * 4. the route table, whose audit refuses to boot if any route was not declared;
+ * 5. static, last, because it owns the not-found handler.
  */
-export function createServer({ config, db }: CreateServerOptions): FastifyInstance {
+export function createServer({
+  config,
+  db,
+  knex,
+  principalResolver,
+  extraRoutes = [],
+}: CreateServerOptions): FastifyInstance {
   const app = Fastify({
     // The request logger stays off by default so tests are quiet; the boot
-    // messages above are the ones an owner needs in `docker compose logs`.
+    // messages are the ones an owner needs in `docker compose logs`.
     logger: config.NODE_ENV === 'development',
     // Trust no proxy headers: the app is reached through Docker's published
     // port on 127.0.0.1, so there is no proxy in front of it to trust.
     trustProxy: false,
   });
 
-  // Captured once, when the server is built, not per request. The previous code
-  // read the clock inside the `/health` handler, so `uptime_s` measured the gap
-  // between a request arriving and the response being built — always 0. A field
-  // that always reads zero is worse than no field, because it looks like data.
+  // Captured once, when the server is built, not per request. Reading the clock
+  // inside the `/health` handler made `uptime_s` measure the gap between a
+  // request arriving and the response being built — always 0. A field that
+  // always reads zero is worse than no field, because it looks like data.
   const startedAtMs = nowMs();
 
   registerRequestId(app);
+  decoratePrincipal(app);
   registerErrorEnvelope(app, config.PDM_WEB_DIR);
-  registerHealth(app, db, config, startedAtMs);
+  // Services are built once and reached through a decorator, so a route handler
+  // receives one rather than constructing its own. A handler that built its own
+  // service would hold a second Knex pool, and the transaction it opened would
+  // not be the one the route's other writes joined.
+  const activityLog = createActivityLogService(knex);
+  decorateServices(app, {
+    activityLog,
+    projects: createProjectService(knex, activityLog),
+    tasks: createTaskService(knex, activityLog),
+    todos: createTodoService(knex, activityLog),
+    taskLinks: createTaskLinkService(knex, activityLog),
+    criteria: createCriterionService(knex, activityLog),
+    references: createReferenceService(knex, activityLog),
+    tags: createTagService(knex, activityLog),
+  });
+  // The resolver is installed even when the caller passes none, because the
+  // alternative is every request arriving anonymous: production passes none,
+  // and an unset resolver meant the whole API refused with 403 while every
+  // test — each installing its own resolver — stayed green.
+  registerRoutes(app, buildRouteTable({ db, config, startedAtMs, extraRoutes }), {
+    principalResolver: principalResolver ?? defaultPrincipalResolver,
+  });
   // Registered last: the SPA fallback owns the not-found handler, so it is
   // installed only after every API route and every real asset has claimed its
   // path. Fastify permits exactly one not-found handler per scope, which is why
@@ -50,155 +136,34 @@ export function createServer({ config, db }: CreateServerOptions): FastifyInstan
 }
 
 /**
- * A request id in a response header, so a log line and a bug report can be
- * correlated without a clock or a guess.
- */
-function registerRequestId(app: FastifyInstance): void {
-  app.addHook('onRequest', async (req, reply) => {
-    const incoming = req.headers['x-request-id'];
-    const id = typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 128
-      ? incoming
-      : crypto.randomUUID();
-    (req as FastifyRequest & { requestId?: string }).requestId = id;
-    void reply.header('x-request-id', id);
-  });
-}
-
-function requestIdOf(req: FastifyRequest): string | undefined {
-  return (req as FastifyRequest & { requestId?: string }).requestId;
-}
-
-/**
- * The one error envelope (AGENTS.md Part 6). A client never has to guess the
- * shape of a failure, and the stack trace never reaches the response.
- */
-function registerErrorEnvelope(app: FastifyInstance, webDir: string | undefined): void {
-  const indexPath = webDir && existsSync(join(webDir, 'index.html')) ? join(resolve(webDir), 'index.html') : undefined;
-
-  /**
-   * One not-found handler, deciding two cases (0.1.0 design notes).
-   *
-   * A client-side route like `/tasks/42` has no file behind it, so it is
-   * answered with `index.html` and the router resolves it. **Asset paths are
-   * excluded**: answering a missing script with HTML produces a MIME-type error
-   * in the browser that says nothing about the real cause, so those get a
-   * normal 404 envelope instead.
-   */
-  app.setNotFoundHandler((req, reply) => {
-    const path = req.url.split('?')[0] ?? '';
-    const looksLikeAsset = /\.[a-z0-9]+$/i.test(path);
-
-    if (indexPath && !path.startsWith('/api')) {
-      // A real asset is served as itself; anything else is a client-side route,
-      // which the frontend router resolves.
-      if (looksLikeAsset) {
-        // Relative to the static root, which is what sendFile expects; an
-        // absolute path is resolved against the root and misses.
-        const assetPath = join(resolve(webDir!), path);
-        if (assetPath.startsWith(resolve(webDir!)) && existsSync(assetPath)) {
-          return reply.sendFile(path);
-        }
-      } else {
-        return reply.sendFile('index.html');
-      }
-    }
-
-    const body: ErrorEnvelope = {
-      error: {
-        code: ERROR_CODES.NOT_FOUND,
-        message: `No route for ${req.method} ${req.url}`,
-        status: 404,
-        request_id: requestIdOf(req),
-      },
-    };
-    return reply.status(404).send(body);
-  });
-
-  app.setErrorHandler((error: unknown, req, reply) => {
-    const candidate = error as { statusCode?: unknown; message?: unknown };
-    const status =
-      typeof candidate.statusCode === 'number' && candidate.statusCode >= 400
-        ? candidate.statusCode
-        : 500;
-    const message = typeof candidate.message === 'string' ? candidate.message : 'Unknown error';
-
-    if (status >= 500) {
-      // The full error goes to the log, the message does not go to the client.
-      app.log.error({ err: error, req: req.url }, 'request failed');
-    }
-
-    const body: ErrorEnvelope = {
-      error: {
-        code: status >= 500 ? ERROR_CODES.INTERNAL : ERROR_CODES.VALIDATION_FAILED,
-        message: status >= 500 ? 'Internal server error' : message,
-        status,
-        request_id: requestIdOf(req),
-      },
-    };
-    void reply.status(status).send(body);
-  });
-}
-
-/**
- * `GET /health` (DEP-06).
+ * The declared routes.
  *
- * The check is real: it runs `SELECT 1` and counts migrations, so a container
- * that is up but broken reports unhealthy instead of reassuring a human. A
- * 503 with `db: "error"` and the reason logged is the documented behaviour
- * (acceptance criterion 2).
+ * One function so that adding a route is a one-line change in one place, and so
+ * that the table's audit has a single source to compare the app against. As
+ * 0.2.0 grows this becomes the point where each domain's route module is
+ * assembled; the shape does not change.
  */
-function registerHealth(
-  app: FastifyInstance,
-  db: Db,
-  config: AppConfig,
-  startedAtMs: number,
-): void {
-  /**
-   * Process age in whole seconds, from the same seam as everything else
-   * (`nowMs()`, AGENTS.md ground rule 4) and the moment the server was built.
-   */
-  const uptimeSeconds = (): number =>
-    Math.max(0, Math.floor((nowMs() - startedAtMs) / 1000));
-
-  app.get('/health', async (_req, reply) => {
-    // Read from the validated config, not process.env. The config was parsed
-    // once at boot, and a value could have been defaulted there.
-    const { TZ: timeZone } = config;
-
-    try {
-      db.prepare('SELECT 1').get();
-      const status = migrationStatus(db);
-      const body: HealthResponse = {
-        status: 'ok',
-        db: 'ok',
-        version: VERSION,
-        uptime_s: uptimeSeconds(),
-        migrations: {
-          applied: status.applied.length,
-          pending: status.pending.length,
-          ok: status.pending.length === 0,
-        },
-        time_zone: timeZone,
-        now_ms: nowMs(),
-      };
-      return reply.status(200).send(body);
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      app.log.error({ err: cause }, 'health check failed: database unreachable');
-
-      const body: HealthResponse = {
-        status: 'error',
-        db: 'error',
-        version: VERSION,
-        uptime_s: uptimeSeconds(),
-        migrations: { applied: 0, pending: 0, ok: false },
-        time_zone: timeZone,
-        db_error: message,
-        now_ms: nowMs(),
-      };
-      return reply.status(503).send(body);
-    }
-  });
+function buildRouteTable(options: {
+  db: Db;
+  config: AppConfig;
+  startedAtMs: number;
+  extraRoutes: readonly RouteDeclaration[];
+}): RouteTable {
+  // Each domain contributes its declarations here, so the table keeps one source
+  // for production routes and the audit keeps one object to compare against.
+  // The three unprefixed routes (ADR 0013) lead: the probes must be answerable
+  // before anything else, and the root redirect is the address a human types.
+  const base = [...projectRoutes(), ...taskRoutes(), ...todoRoutes(), ...taskLinkRoutes(), ...criterionRoutes(), ...referenceRoutes(), ...tagRoutes()].reduce<RouteTable>(
+    (table, declaration) => table.declare(declaration),
+    new RouteTable()
+      .declare(healthRoute(options))
+      .declare(readyRoute({ db: options.db }))
+      .declare(rootRoute()),
+  );
+  return options.extraRoutes.reduce<RouteTable>(
+    (table, declaration) => table.declare(declaration),
+    base,
+  );
 }
 
 /**
@@ -214,12 +179,19 @@ function registerStatic(app: FastifyInstance, config: AppConfig): void {
 
   if (!webDir || !existsSync(join(webDir, 'index.html'))) {
     // Not an error. The API is useful on its own, and in tests there is no build.
-    app.log.info(`no frontend build at ${webDir}; serving the API only`);
+    logger.info('server.ts', 'registerStatic', 'no frontend build; serving the API only', {
+      web_dir: webDir,
+    });
     return;
   }
 
   void app.register(fastifyStatic, {
     root: resolve(webDir),
+    // Everything the browser loads is under the UI prefix (ADR 0013), so the
+    // plugin is mounted there rather than at the root. A bundle requested from
+    // `/assets/...` now 404s, which is the point: one namespace, no overlap
+    // between an asset path and a route path.
+    prefix: UI_V1,
     // Hashed asset filenames, so they can be cached indefinitely.
     maxAge: '1y',
     immutable: true,
@@ -231,5 +203,3 @@ function registerStatic(app: FastifyInstance, config: AppConfig): void {
     wildcard: false,
   });
 }
-
-

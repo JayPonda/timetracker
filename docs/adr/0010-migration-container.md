@@ -4,7 +4,8 @@
 - **Date:** 2026-09-28
 - **Affects:** `DEP-09`, `DEP-04`, `NFR-REL-01`, `NFR-MAINT-02`; release 0.1.0
 - **Related:** [ADR 0001](0001-stack-and-deployment.md) (one application container),
-  [ADR 0009](0009-migration-runner-umzug.md) (Umzug does the running)
+  [ADR 0009](0009-migration-runner-umzug.md) (migration running, superseded by
+  [ADR 0012](0012-migration-runner-knex.md))
 
 ## Context
 
