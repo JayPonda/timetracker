@@ -31,14 +31,14 @@ async function readProject(res: Response, fallback: string): Promise<Project> {
 }
 
 export async function fetchProjects(signal: AbortSignal, includeArchived: boolean): Promise<Project[]> {
-  const path = includeArchived ? '/projects?include_archived=true' : '/projects';
+  const path = includeArchived ? '/api/v1/projects?include_archived=true' : '/api/v1/projects';
   const res = await fetch(path, { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw await apiError(res, 'Could not load projects');
   return listProjectsResponseSchema.parse(await res.json()).projects;
 }
 
 export async function createProject(input: CreateProjectInput): Promise<Project> {
-  const res = await fetch('/projects', {
+  const res = await fetch('/api/v1/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -47,7 +47,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
 }
 
 export async function updateProject(id: number, input: UpdateProjectInput): Promise<Project> {
-  const res = await fetch(`/projects/${id}`, {
+  const res = await fetch(`/api/v1/projects/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -56,7 +56,7 @@ export async function updateProject(id: number, input: UpdateProjectInput): Prom
 }
 
 export async function archiveProject(id: number): Promise<Project> {
-  const res = await fetch(`/projects/${id}/archive`, {
+  const res = await fetch(`/api/v1/projects/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -64,7 +64,7 @@ export async function archiveProject(id: number): Promise<Project> {
 }
 
 export async function restoreProject(id: number): Promise<Project> {
-  const res = await fetch(`/projects/${id}/restore`, {
+  const res = await fetch(`/api/v1/projects/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });

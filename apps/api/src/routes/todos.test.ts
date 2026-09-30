@@ -53,7 +53,7 @@ describe('FR-TODO-01: POST /tasks/:id/todos adds a todo', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/todos`,
+      url: `/api/v1/tasks/${taskId}/todos`,
       payload: { title: 'Draft the outline' },
     });
 
@@ -69,7 +69,7 @@ describe('FR-TODO-01: POST /tasks/:id/todos adds a todo', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/tasks/999/todos',
+      url: '/api/v1/tasks/999/todos',
       payload: { title: 'Ghost' },
     });
 
@@ -88,7 +88,7 @@ describe('FR-TODO-01: PATCH /tasks/:id/todos/reorder reorders', () => {
 
     const res = await app.inject({
       method: 'PATCH',
-      url: `/tasks/${taskId}/todos/reorder`,
+      url: `/api/v1/tasks/${taskId}/todos/reorder`,
       payload: { order: [b.id, a.id] },
     });
 
@@ -105,7 +105,7 @@ describe('FR-TODO-01: PATCH /tasks/:id/todos/reorder reorders', () => {
 
     const res = await app.inject({
       method: 'PATCH',
-      url: `/tasks/${taskId}/todos/reorder`,
+      url: `/api/v1/tasks/${taskId}/todos/reorder`,
       payload: { order: [1, 1] },
     });
 
@@ -126,7 +126,7 @@ describe('FR-TODO-02: PATCH /todos/:id ticks without a client date', () => {
 
     const res = await app.inject({
       method: 'PATCH',
-      url: `/todos/${created.id}`,
+      url: `/api/v1/todos/${created.id}`,
       payload: { done: true },
     });
 
@@ -146,14 +146,14 @@ describe('FR-TODO-02: PATCH /todos/:id ticks without a client date', () => {
     });
 
     const archived = todoSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/todos/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/todos/${created.id}/archive` })).json<{
         todo: unknown;
       }>().todo,
     );
     expect(archived.archived_at).not.toBeNull();
 
     const restored = todoSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/todos/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/todos/${created.id}/restore` })).json<{
         todo: unknown;
       }>().todo,
     );
@@ -170,7 +170,7 @@ describe('MCP-14: the assistant may add todos but may never change them', () => 
       (
         await app.inject({
           method: 'POST',
-          url: `/tasks/${taskId}/todos`,
+          url: `/api/v1/tasks/${taskId}/todos`,
           payload: { title: 'Assistant todo' },
         })
       ).statusCode,
@@ -181,10 +181,10 @@ describe('MCP-14: the assistant may add todos but may never change them', () => 
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
     for (const req of [
-      { method: 'PATCH', url: '/todos/1', payload: { title: 'Assistant rename' } },
-      { method: 'PATCH', url: '/tasks/1/todos/reorder', payload: { order: [1] } },
-      { method: 'PATCH', url: '/todos/1/archive', payload: {} },
-      { method: 'PATCH', url: '/todos/1/restore', payload: {} },
+      { method: 'PATCH', url: '/api/v1/todos/1', payload: { title: 'Assistant rename' } },
+      { method: 'PATCH', url: '/api/v1/tasks/1/todos/reorder', payload: { order: [1] } },
+      { method: 'PATCH', url: '/api/v1/todos/1/archive', payload: {} },
+      { method: 'PATCH', url: '/api/v1/todos/1/restore', payload: {} },
     ] as const) {
       const res = await app.inject(req);
       expect(res.statusCode).toBe(403);

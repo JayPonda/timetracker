@@ -6,6 +6,7 @@ import type {
   RouteHandlerMethod,
 } from 'fastify';
 import type { Capability } from '@pdm/shared';
+import { API_V1, UNPREFIXED_ROUTES, isDeclaredRouteAllowed } from '@pdm/shared';
 import { capabilityDenied } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { anonymousPrincipal, type PrincipalResolver } from '../middleware/principal.js';
@@ -123,6 +124,12 @@ export class RouteTable {
    * An `archive` is a `PATCH`. Making `DELETE` unrepresentable in this type's
    * happy path means the prohibition cannot be defeated by a route added in a
    * hurry under time pressure.
+   *
+   * A path outside the scheme is refused for the same reason (ADR 0013): this
+   * process serves the JSON and the HTML from one origin, so an unprefixed path
+   * is ambiguous rather than merely untidy. See `isDeclaredRouteAllowed` — which
+   * a UI path is *not* allowed through, because a page acquires a capability
+   * guard here and an HTML response has no principal to guard.
    */
   declare(declaration: RouteDeclaration): this {
     const method = declaration.method.toUpperCase() as HTTPMethods;
@@ -132,6 +139,20 @@ export class RouteTable {
       throw new Error(
         `Route ${declarationKey} refused: this API has no DELETE route. ` +
           'Removal is archive, and archive is reversible (DATA-09, BR-13).',
+      );
+    }
+
+    // The URL scheme, refused here for the same reason `DELETE` is (ADR 0013).
+    // One process serves the JSON and the HTML, so an unprefixed path is
+    // ambiguous: `/tasks` is a list of tasks in one namespace and a screen in
+    // the other. A convention would hold until the release somebody is rushing
+    // through, so the check is at the only place a route enters the app.
+    if (!isDeclaredRouteAllowed(declaration.url)) {
+      throw new Error(
+        `Route ${declarationKey} refused: it is neither under ${API_V1} nor one of the ` +
+          `agreed unprefixed routes (${UNPREFIXED_ROUTES.join(', ')}). Every API route is ` +
+          `namespaced, because this process serves the API and the frontend from one origin ` +
+          '(ADR 0013).',
       );
     }
 

@@ -47,7 +47,7 @@ export function todoRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/tasks/:id/todos',
+      url: '/api/v1/tasks/:id/todos',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'List a task’s todos in timeline order (FR-TODO-01, DATA-11)',
       handler: async (req, reply) => {
@@ -61,14 +61,14 @@ export function todoRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/tasks/:id/todos',
+      url: '/api/v1/tasks/:id/todos',
       capabilities: [CAPABILITIES.TASK_CREATE],
       description: 'Add a todo to a task (FR-TODO-01)',
       handler: async (req, reply) => {
         const taskId = parseId((req.params as Record<string, string>).id, 'task');
         const input = parseOrThrow(createTodoSchema, req.body ?? {});
         const todo = await req.server.services.todos.create(taskId, input);
-        logger.debug('todos.ts', 'POST /tasks/:id/todos', 'created', {
+        logger.debug('todos.ts', 'POST /api/v1/tasks/:id/todos', 'created', {
           todo_id: todo.id,
           task_id: taskId,
         });
@@ -77,7 +77,7 @@ export function todoRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/tasks/:id/todos/reorder',
+      url: '/api/v1/tasks/:id/todos/reorder',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Reorder a task’s todos with the complete order (FR-TODO-01)',
       handler: async (req, reply) => {
@@ -89,7 +89,7 @@ export function todoRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'GET',
-      url: '/todos/:id',
+      url: '/api/v1/todos/:id',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'Read one todo',
       handler: async (req, reply) => {
@@ -100,7 +100,7 @@ export function todoRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/todos/:id',
+      url: '/api/v1/todos/:id',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Rename, retick or re-estimate a todo (FR-TODO-01, FR-TODO-02)',
       handler: async (req, reply) => {
@@ -112,7 +112,7 @@ export function todoRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/todos/:id/archive',
+      url: '/api/v1/todos/:id/archive',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Archive a todo; never deletes it (FR-PHASE-05)',
       handler: async (req, reply) => {
@@ -123,7 +123,7 @@ export function todoRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/todos/:id/restore',
+      url: '/api/v1/todos/:id/restore',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Restore an archived todo (FR-PHASE-05)',
       handler: async (req, reply) => {

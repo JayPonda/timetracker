@@ -39,7 +39,7 @@ describe('criterion 12: a principal without the capability is refused with 403',
       holds: [CAPABILITIES.TASK_READ],
     });
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} });
 
     expect(res.statusCode).toBe(403);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.CAPABILITY_DENIED);
@@ -48,7 +48,7 @@ describe('criterion 12: a principal without the capability is refused with 403',
   it('names the missing capability in the message', async () => {
     const { app } = await appHolding({ requires: [CAPABILITIES.TASK_CREATE], holds: [] });
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} });
 
     // An operator reading a 403 in a log is trying to work out which token is
     // missing what, so the message says it.
@@ -62,7 +62,7 @@ describe('criterion 12: a principal without the capability is refused with 403',
       kind: 'anonymous',
     });
 
-    expect((await app.inject({ method: 'GET', url: '/api/test-protected' })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/test-protected' })).statusCode).toBe(403);
   });
 
   it('refuses before the handler runs, so a denied write leaves nothing behind', async () => {
@@ -71,7 +71,7 @@ describe('criterion 12: a principal without the capability is refused with 403',
       holds: [CAPABILITIES.TASK_READ],
     });
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} });
 
     // The point of MCP-14 is that a denied write has no effect, so the handler's
     // side effect must not have happened.
@@ -82,7 +82,7 @@ describe('criterion 12: a principal without the capability is refused with 403',
   it('carries the request id, so the refusal can be found in the log', async () => {
     const { app } = await appHolding({ requires: [CAPABILITIES.TASK_CREATE], holds: [] });
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} });
 
     expect(res.json<ErrorEnvelope>().error.request_id).toBe(res.headers['x-request-id']);
   });
@@ -90,7 +90,7 @@ describe('criterion 12: a principal without the capability is refused with 403',
   it('refuses on a read as well as a write', async () => {
     const { app } = await appHolding({ requires: [CAPABILITIES.TASK_READ], holds: [] });
 
-    expect((await app.inject({ method: 'GET', url: '/api/test-protected' })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/test-protected' })).statusCode).toBe(403);
   });
 });
 
@@ -102,12 +102,12 @@ describe('production resolves the local user when no resolver is installed', () 
     // installing its own resolver, stayed green.
     harness = await createTestApp();
 
-    expect((await harness.app.inject({ method: 'GET', url: '/projects' })).statusCode).toBe(200);
+    expect((await harness.app.inject({ method: 'GET', url: '/api/v1/projects' })).statusCode).toBe(200);
     expect(
       (
         await harness.app.inject({
           method: 'POST',
-          url: '/projects',
+          url: '/api/v1/projects',
           payload: { name: 'Production project' },
         })
       ).statusCode,
@@ -123,7 +123,7 @@ describe('criterion 12: a principal holding the capability is allowed', () => {
     });
 
     expect(
-      (await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} })).statusCode,
+      (await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} })).statusCode,
     ).toBe(200);
   });
 
@@ -134,7 +134,7 @@ describe('criterion 12: a principal holding the capability is allowed', () => {
     });
 
     expect(
-      (await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} })).statusCode,
+      (await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} })).statusCode,
     ).toBe(200);
   });
 
@@ -146,7 +146,7 @@ describe('criterion 12: a principal holding the capability is allowed', () => {
       holds: [CAPABILITIES.TASK_READ],
     });
 
-    const res = await app.inject({ method: 'GET', url: '/api/test-protected' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/test-protected' });
     expect(res.statusCode).toBe(403);
     expect(res.json<ErrorEnvelope>().error.message).toContain('task:update');
   });
@@ -163,7 +163,7 @@ describe('MCP-14: the assistant cannot reach a mutating route', () => {
     // MCP_MAX_CAPABILITIES omits it. A read-and-create principal must not reach
     // the route by any path.
     expect(
-      (await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} })).statusCode,
+      (await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} })).statusCode,
     ).toBe(403);
   });
 });
@@ -175,7 +175,7 @@ describe('criterion 7: the app has no DELETE route', () => {
       holds: [CAPABILITIES.TASK_UPDATE],
     });
 
-    const res = await app.inject({ method: 'DELETE', url: '/api/test-protected' });
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/test-protected' });
 
     expect(res.statusCode).toBe(404);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
@@ -200,7 +200,7 @@ describe('the route audit refuses to boot on an undeclared route', () => {
     // and the audit is an `onReady` hook, so the test has to own the call.
     const { app } = await createTestApp({ deferReady: true });
 
-    app.get('/api/undeclared', async () => ({ ok: true }));
+    app.get('/api/v1/undeclared', async () => ({ ok: true }));
     registerRoutes(app, new RouteTable());
 
     await expect(app.ready()).rejects.toThrow(/without a capability declaration/);
@@ -209,10 +209,10 @@ describe('the route audit refuses to boot on an undeclared route', () => {
   it('names the offending route in the failure', async () => {
     const { app } = await createTestApp({ deferReady: true });
 
-    app.get('/api/undeclared', async () => ({ ok: true }));
+    app.get('/api/v1/undeclared', async () => ({ ok: true }));
     registerRoutes(app, new RouteTable());
 
-    await expect(app.ready()).rejects.toThrow(/\/api\/undeclared/);
+    await expect(app.ready()).rejects.toThrow(/\/api\/v1\/undeclared/);
   });
 
   it('does not mistake a static file route for an API route', async () => {
@@ -244,7 +244,7 @@ describe('a route with no declared capability is refused, even for the local use
     harness = await createTestApp({ extraRoutes: protectedRoute([]) });
 
     expect(
-      (await harness.app.inject({ method: 'GET', url: '/api/test-protected' })).statusCode,
+      (await harness.app.inject({ method: 'GET', url: '/api/v1/test-protected' })).statusCode,
     ).toBe(403);
   });
 });
@@ -267,7 +267,7 @@ describe('the local user can do everything a route asks for', () => {
     });
 
     expect(
-      (await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} })).statusCode,
+      (await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} })).statusCode,
     ).toBe(200);
   });
 

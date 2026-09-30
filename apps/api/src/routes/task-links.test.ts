@@ -53,7 +53,7 @@ describe('FR-TASK-03: POST /tasks/:id/links adds a link', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/links`,
+      url: `/api/v1/tasks/${taskId}/links`,
       payload: { label: 'Spec', url: 'https://example.com/spec' },
     });
 
@@ -69,14 +69,14 @@ describe('FR-TASK-03: POST /tasks/:id/links adds a link', () => {
     for (const n of [1, 2, 3]) {
       await app.inject({
         method: 'POST',
-        url: `/tasks/${taskId}/links`,
+        url: `/api/v1/tasks/${taskId}/links`,
         payload: { url: `https://example.com/${n}` },
       });
     }
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/links`,
+      url: `/api/v1/tasks/${taskId}/links`,
       payload: { url: 'https://example.com/4' },
     });
     const body = res.json<ErrorEnvelope>();
@@ -92,7 +92,7 @@ describe('FR-TASK-03: POST /tasks/:id/links adds a link', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/links`,
+      url: `/api/v1/tasks/${taskId}/links`,
       payload: { url: 'not a link' },
     });
 
@@ -112,7 +112,7 @@ describe('FR-TASK-03: PATCH /task-links/:id edits, archives and restores', () =>
       (
         await app.inject({
           method: 'POST',
-          url: `/tasks/${taskId}/links`,
+          url: `/api/v1/tasks/${taskId}/links`,
           payload: { label: 'Old', url: 'https://example.com' },
         })
       ).json<{ link: unknown }>().link,
@@ -122,7 +122,7 @@ describe('FR-TASK-03: PATCH /task-links/:id edits, archives and restores', () =>
       (
         await app.inject({
           method: 'PATCH',
-          url: `/task-links/${created.id}`,
+          url: `/api/v1/task-links/${created.id}`,
           payload: { label: 'New' },
         })
       ).json<{ link: unknown }>().link,
@@ -130,14 +130,14 @@ describe('FR-TASK-03: PATCH /task-links/:id edits, archives and restores', () =>
     expect(edited.label).toBe('New');
 
     const archived = taskLinkSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/task-links/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/task-links/${created.id}/archive` })).json<{
         link: unknown;
       }>().link,
     );
     expect(archived.archived_at).not.toBeNull();
 
     const restored = taskLinkSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/task-links/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/task-links/${created.id}/restore` })).json<{
         link: unknown;
       }>().link,
     );
@@ -154,7 +154,7 @@ describe('MCP-14: the assistant may add links but may never change them', () => 
       (
         await app.inject({
           method: 'POST',
-          url: `/tasks/${taskId}/links`,
+          url: `/api/v1/tasks/${taskId}/links`,
           payload: { url: 'https://example.com' },
         })
       ).statusCode,
@@ -165,9 +165,9 @@ describe('MCP-14: the assistant may add links but may never change them', () => 
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
     for (const req of [
-      { method: 'PATCH', url: '/task-links/1', payload: { label: 'Assistant rename' } },
-      { method: 'PATCH', url: '/task-links/1/archive', payload: {} },
-      { method: 'PATCH', url: '/task-links/1/restore', payload: {} },
+      { method: 'PATCH', url: '/api/v1/task-links/1', payload: { label: 'Assistant rename' } },
+      { method: 'PATCH', url: '/api/v1/task-links/1/archive', payload: {} },
+      { method: 'PATCH', url: '/api/v1/task-links/1/restore', payload: {} },
     ] as const) {
       const res = await app.inject(req);
       expect(res.statusCode).toBe(403);

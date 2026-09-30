@@ -37,7 +37,7 @@ describe('FR-PRJ-01: POST /projects creates a project', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/projects',
+      url: '/api/v1/projects',
       payload: { name: 'Client work', colour: '#4f46e5' },
     });
 
@@ -54,7 +54,7 @@ describe('UI-08: a bad project payload names the field and keeps the secret', ()
 
     const res = await app.inject({
       method: 'POST',
-      url: '/projects',
+      url: '/api/v1/projects',
       payload: { name: 'Bad colour', colour: 'not-a-colour' },
     });
     const body = res.json<ErrorEnvelope>();
@@ -71,11 +71,11 @@ describe('UI-08: a bad project payload names the field and keeps the secret', ()
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
     const created = projectSchema.parse(
       (
-        await app.inject({ method: 'POST', url: '/projects', payload: { name: 'Website' } })
+        await app.inject({ method: 'POST', url: '/api/v1/projects', payload: { name: 'Website' } })
       ).json<{ project: unknown }>().project,
     );
 
-    const res = await app.inject({ method: 'PATCH', url: `/projects/${created.id}`, payload: {} });
+    const res = await app.inject({ method: 'PATCH', url: `/api/v1/projects/${created.id}`, payload: {} });
 
     expect(res.statusCode).toBe(422);
     expect(
@@ -93,8 +93,8 @@ describe('DATA-11: GET /projects hides archived projects by default', () => {
     const archived = await projects.create({ name: 'Old', description: '', colour: '#4f46e5' });
     await projects.archive(archived.id);
 
-    const hidden = await app.inject({ method: 'GET', url: '/projects' });
-    const shown = await app.inject({ method: 'GET', url: '/projects?include_archived=true' });
+    const hidden = await app.inject({ method: 'GET', url: '/api/v1/projects' });
+    const shown = await app.inject({ method: 'GET', url: '/api/v1/projects?include_archived=true' });
 
     expect(hidden.json<{ projects: Array<{ id: number }> }>().projects.map((p) => p.id)).toEqual([
       live.id,
@@ -111,19 +111,19 @@ describe('FR-PRJ-03 and FR-PRJ-04: archive and restore are reversible PATCH rout
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
     const created = projectSchema.parse(
       (
-        await app.inject({ method: 'POST', url: '/projects', payload: { name: 'Website' } })
+        await app.inject({ method: 'POST', url: '/api/v1/projects', payload: { name: 'Website' } })
       ).json<{ project: unknown }>().project,
     );
 
     const archived = projectSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/projects/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/projects/${created.id}/archive` })).json<{
         project: unknown;
       }>().project,
     );
     expect(archived.archived_at).not.toBeNull();
 
     const restored = projectSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/projects/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/projects/${created.id}/restore` })).json<{
         project: unknown;
       }>().project,
     );
@@ -135,7 +135,7 @@ describe('path and missing projects are answered precisely', () => {
   it('rejects a non-numeric id before touching the service', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
 
-    const res = await app.inject({ method: 'GET', url: '/projects/not-a-number' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/projects/not-a-number' });
 
     expect(res.statusCode).toBe(422);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.VALIDATION_FAILED);
@@ -144,7 +144,7 @@ describe('path and missing projects are answered precisely', () => {
   it('answers 404 for a project that does not exist', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
 
-    const res = await app.inject({ method: 'GET', url: '/projects/999' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/projects/999' });
 
     expect(res.statusCode).toBe(404);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
@@ -155,7 +155,7 @@ describe('MCP-14: the assistant may read projects but may not write them', () =>
   it('allows GET /projects with the assistant capability set', async () => {
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
-    expect((await app.inject({ method: 'GET', url: '/projects' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/projects' })).statusCode).toBe(200);
   });
 
   it('refuses POST /projects before the handler writes anything', async () => {
@@ -163,7 +163,7 @@ describe('MCP-14: the assistant may read projects but may not write them', () =>
 
     const res = await app.inject({
       method: 'POST',
-      url: '/projects',
+      url: '/api/v1/projects',
       payload: { name: 'Assistant project' },
     });
 

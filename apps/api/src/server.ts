@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Database as Db } from 'better-sqlite3';
 import type { Knex } from 'knex';
-import { nowMs } from '@pdm/shared';
+import { nowMs, UI_V1 } from '@pdm/shared';
 import type { AppConfig } from './config/index.js';
 import { logger } from './lib/logger.js';
 import { registerErrorEnvelope } from './middleware/error.js';
@@ -24,6 +24,8 @@ import { createCriterionService } from './services/criterion.service.js';
 import { createReferenceService } from './services/reference.service.js';
 import { createTagService } from './services/tag.service.js';
 import { healthRoute } from './routes/health.js';
+import { readyRoute } from './routes/ready.js';
+import { rootRoute } from './routes/root.js';
 import { projectRoutes } from './routes/projects.js';
 import { taskRoutes } from './routes/tasks.js';
 import { todoRoutes } from './routes/todos.js';
@@ -149,9 +151,14 @@ function buildRouteTable(options: {
 }): RouteTable {
   // Each domain contributes its declarations here, so the table keeps one source
   // for production routes and the audit keeps one object to compare against.
+  // The three unprefixed routes (ADR 0013) lead: the probes must be answerable
+  // before anything else, and the root redirect is the address a human types.
   const base = [...projectRoutes(), ...taskRoutes(), ...todoRoutes(), ...taskLinkRoutes(), ...criterionRoutes(), ...referenceRoutes(), ...tagRoutes()].reduce<RouteTable>(
     (table, declaration) => table.declare(declaration),
-    new RouteTable().declare(healthRoute(options)),
+    new RouteTable()
+      .declare(healthRoute(options))
+      .declare(readyRoute({ db: options.db }))
+      .declare(rootRoute()),
   );
   return options.extraRoutes.reduce<RouteTable>(
     (table, declaration) => table.declare(declaration),
@@ -180,6 +187,11 @@ function registerStatic(app: FastifyInstance, config: AppConfig): void {
 
   void app.register(fastifyStatic, {
     root: resolve(webDir),
+    // Everything the browser loads is under the UI prefix (ADR 0013), so the
+    // plugin is mounted there rather than at the root. A bundle requested from
+    // `/assets/...` now 404s, which is the point: one namespace, no overlap
+    // between an asset path and a route path.
+    prefix: UI_V1,
     // Hashed asset filenames, so they can be cached indefinitely.
     maxAge: '1y',
     immutable: true,

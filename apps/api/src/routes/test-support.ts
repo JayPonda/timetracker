@@ -37,14 +37,14 @@ export function protectedRoute(capabilities: readonly Capability[]): RouteDeclar
   return [
     {
       method: 'GET',
-      url: '/api/test-protected',
+      url: '/api/v1/test-protected',
       capabilities,
       description: 'test route for the capability guard',
       handler: async () => ({ ok: true }),
     },
     {
       method: 'POST',
-      url: '/api/test-protected',
+      url: '/api/v1/test-protected',
       capabilities,
       description: 'test route for the capability guard',
       // The marker proves the handler did not run, which is what makes "refused

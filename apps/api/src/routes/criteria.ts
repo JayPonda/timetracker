@@ -44,7 +44,7 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/tasks/:id/criteria',
+      url: '/api/v1/tasks/:id/criteria',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'List a task’s acceptance criteria in definition order (FR-AC-01)',
       handler: async (req, reply) => {
@@ -58,14 +58,14 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/tasks/:id/criteria',
+      url: '/api/v1/tasks/:id/criteria',
       capabilities: [CAPABILITIES.TASK_CREATE],
       description: 'Add an acceptance criterion to a task (FR-AC-01)',
       handler: async (req, reply) => {
         const taskId = parseId((req.params as Record<string, string>).id, 'task');
         const input = parseOrThrow(createCriterionSchema, req.body ?? {});
         const criterion = await req.server.services.criteria.create(taskId, input);
-        logger.debug('criteria.ts', 'POST /tasks/:id/criteria', 'created', {
+        logger.debug('criteria.ts', 'POST /api/v1/tasks/:id/criteria', 'created', {
           criterion_id: criterion.id,
           task_id: taskId,
         });
@@ -74,7 +74,7 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/tasks/:id/criteria/reorder',
+      url: '/api/v1/tasks/:id/criteria/reorder',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Reorder a task’s criteria with the complete order (FR-AC-01)',
       handler: async (req, reply) => {
@@ -86,7 +86,7 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'GET',
-      url: '/criteria/:id',
+      url: '/api/v1/criteria/:id',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'Read one acceptance criterion',
       handler: async (req, reply) => {
@@ -97,7 +97,7 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/criteria/:id',
+      url: '/api/v1/criteria/:id',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Edit an acceptance criterion’s statement (FR-AC-01)',
       handler: async (req, reply) => {
@@ -109,7 +109,7 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/criteria/:id/archive',
+      url: '/api/v1/criteria/:id/archive',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Archive a criterion; past closure records keep it (FR-AC-01)',
       handler: async (req, reply) => {
@@ -120,7 +120,7 @@ export function criterionRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/criteria/:id/restore',
+      url: '/api/v1/criteria/:id/restore',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Restore an archived criterion (FR-AC-01)',
       handler: async (req, reply) => {

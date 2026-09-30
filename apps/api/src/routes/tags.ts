@@ -43,7 +43,7 @@ export function tagRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/tags',
+      url: '/api/v1/tags',
       capabilities: [CAPABILITIES.TAG_READ],
       description: 'List tags, archived ones only when asked for (DATA-11)',
       handler: async (req, reply) => {
@@ -56,7 +56,7 @@ export function tagRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'GET',
-      url: '/tags/:id',
+      url: '/api/v1/tags/:id',
       capabilities: [CAPABILITIES.TAG_READ],
       description: 'Read one tag',
       handler: async (req, reply) => {
@@ -67,19 +67,19 @@ export function tagRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/tags',
+      url: '/api/v1/tags',
       capabilities: [CAPABILITIES.TAG_CREATE],
       description: 'Create a tag; a live name is refused (FR-TAG-01)',
       handler: async (req, reply) => {
         const input = parseOrThrow(createTagSchema, req.body ?? {});
         const tag = await req.server.services.tags.create(input);
-        logger.debug('tags.ts', 'POST /tags', 'created', { tag_id: tag.id });
+        logger.debug('tags.ts', 'POST /api/tags', 'created', { tag_id: tag.id });
         return reply.status(201).send({ tag });
       },
     },
     {
       method: 'PATCH',
-      url: '/tags/:id',
+      url: '/api/v1/tags/:id',
       capabilities: [CAPABILITIES.TAG_UPDATE],
       description: 'Rename or re-colour a tag (FR-TAG-01)',
       handler: async (req, reply) => {
@@ -93,7 +93,7 @@ export function tagRoutes(): readonly RouteDeclaration[] {
       // Archive is a PATCH, not a DELETE: the tag stays on its entries
       // (FR-TAG-05, BR-13).
       method: 'PATCH',
-      url: '/tags/:id/archive',
+      url: '/api/v1/tags/:id/archive',
       capabilities: [CAPABILITIES.TAG_UPDATE],
       description: 'Archive a tag; never deletes it (FR-TAG-05)',
       handler: async (req, reply) => {
@@ -104,7 +104,7 @@ export function tagRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/tags/:id/restore',
+      url: '/api/v1/tags/:id/restore',
       capabilities: [CAPABILITIES.TAG_UPDATE],
       description: 'Restore an archived tag (FR-TAG-05)',
       handler: async (req, reply) => {

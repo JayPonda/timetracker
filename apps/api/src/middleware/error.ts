@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { ERROR_CODES, type ErrorCode, type ErrorEnvelope } from '@pdm/shared';
+import { ERROR_CODES, UI_V1, isUiPath, type ErrorCode, type ErrorEnvelope } from '@pdm/shared';
 import { AppError, validationDetails, validationMessage } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { requestIdOf } from './request-id.js';
@@ -95,9 +95,9 @@ export function registerErrorEnvelope(app: FastifyInstance, webDir: string | und
       : undefined;
 
   /**
-   * One not-found handler, deciding two cases (0.1.0 design notes).
+   * One not-found handler, deciding three cases (0.1.0 design notes, ADR 0013).
    *
-   * A client-side route like `/tasks/42` has no file behind it, so it is
+   * A client-side route like `/ui/tasks/42` has no file behind it, so it is
    * answered with `index.html` and the router resolves it. **Asset paths are
    * excluded**: answering a missing script with HTML produces a MIME-type error
    * in the browser that says nothing about the real cause, so those get a
@@ -107,20 +107,30 @@ export function registerErrorEnvelope(app: FastifyInstance, webDir: string | und
     const path = req.url.split('?')[0] ?? '';
     const looksLikeAsset = /\.[a-z0-9]+$/i.test(path);
 
+    // **Only the UI namespace reaches the SPA.** This is the boundary that keeps
+    // `/api/v1` answering JSON and a mistyped `/tasks` answering a 404 envelope
+    // rather than a page. An earlier version excluded `/api` specifically, which
+    // meant every *other* unprefixed path was answered with HTML — the exact
+    // ambiguity ADR 0013 removed. The condition is now the positive form of the
+    // scheme, so a path outside it cannot be shadowed by the frontend.
+    const uiPath = isUiPath(path);
+
     // The fallback serves pages, and pages are fetched with GET. Answering a
     // DELETE with 200 and HTML — which is what happened in production, where a
     // web build exists and the tests' no-build setup never saw it — tells a
     // client its deletion succeeded while deleting nothing. Every other method
     // falls through to the 404 envelope below.
-    if (indexPath && !path.startsWith('/api') && (req.method === 'GET' || req.method === 'HEAD')) {
+    if (indexPath && uiPath && (req.method === 'GET' || req.method === 'HEAD')) {
       // A real asset is served as itself; anything else is a client-side route,
       // which the frontend router resolves.
       if (looksLikeAsset) {
         // Relative to the static root, which is what sendFile expects; an
-        // absolute path is resolved against the root and misses.
-        const assetPath = join(resolve(webDir!), path);
+        // absolute path is resolved against the root and misses. The UI prefix
+        // is stripped because the plugin is mounted there (ADR 0013).
+        const relative = path.slice(UI_V1.length);
+        const assetPath = join(resolve(webDir!), relative);
         if (assetPath.startsWith(resolve(webDir!)) && existsSync(assetPath)) {
-          return reply.sendFile(path);
+          return reply.sendFile(relative);
         }
       } else {
         return reply.sendFile('index.html');

@@ -24,7 +24,7 @@ import type { RouteDeclaration } from './table.js';
  * response. No SQL, no business rules (ground rule 1).
  */
 
-const ID_PARAM = '/tasks/:id';
+const ID_PARAM = '/api/v1/tasks/:id';
 
 function parseId(raw: unknown): number {
   const id = Number(raw);
@@ -70,7 +70,7 @@ export function taskRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/tasks',
+      url: '/api/v1/tasks',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'List tasks with project/status filters and sorting (FR-VIEW-03, DATA-11)',
       handler: async (req, reply) => {
@@ -98,13 +98,13 @@ export function taskRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/tasks',
+      url: '/api/v1/tasks',
       capabilities: [CAPABILITIES.TASK_CREATE],
       description: 'Create a task (FR-TASK-01)',
       handler: async (req, reply) => {
         const input = parseOrThrow(createTaskSchema, req.body ?? {});
         const task = await req.server.services.tasks.create(input);
-        logger.debug('tasks.ts', 'POST /tasks', 'created', { task_id: task.id });
+        logger.debug('tasks.ts', 'POST /api/v1/tasks', 'created', { task_id: task.id });
         return reply.status(201).send({ task });
       },
     },

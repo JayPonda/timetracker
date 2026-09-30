@@ -10,7 +10,41 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+### Changed
+
+- **URLs are now versioned and split in two (ADR 0013).** Every JSON route moved
+  from `/tasks` to `/api/v1/tasks`, and every page from `/` to `/ui/v1/tasks`.
+  Assets moved with the pages, to `/ui/v1/assets/…`. `API_V1` and `UI_V1` are two
+  independent literal constants in `packages/shared/src/http.ts`, not one composed
+  version number, so the UI can move to `/ui/v2` while the API stays at `/api/v1`.
+  **This is a breaking URL change with no aliases** — `/tasks`, `/api/tasks` and
+  `/ui` are 404, so a bookmark needs retyping once. The app is at
+  `http://127.0.0.1:9090/ui/v1/tasks`, and `/` redirects there with 308 so the
+  method survives and caches ask once.
+  - **`RouteTable.declare` refuses a URL outside the scheme at boot**, so an
+    unprefixed route cannot be registered rather than merely being discouraged.
+    This is the same instinct as refusing `DELETE` in one function: a test proves
+    the current routes, an assertion makes the next one incorrect by default.
+  - **The SPA fallback now asks a positive question** — is this path at or under
+    `UI_V1`? — instead of the old "is this path not under `/api`". The old
+    condition answered *every* other unprefixed path with HTML, so a mistyped
+    `/tasks` returned the entire app shell with a `200` and a client could not
+    tell a wrong URL from a right one. It now returns a 404 envelope.
+  - **`/health` is byte-for-byte unchanged**, and the Docker health check still
+    calls it. Watchdogs do not know which API version is deployed, so the probes
+    stay put.
+  - **Two predicates rather than one.** `isDeclaredRouteAllowed` governs what may
+    be *declared* (UI paths may not, because a page acquiring a capability guard
+    is a category error — HTML has no principal) and `isUiPath` governs what may
+    be *served*. The first version was one function and was necessarily wrong for
+    one of its callers; a test asking whether `/ui/v1/tasks` could be declared is
+    what surfaced it.
+
 ### Fixed
+
+- **Log lines named the unversioned path.** Five `logger.debug` labels read
+  `POST /api/tasks…` after the routes moved to `/api/v1`, so a grep on a route in
+  a log found nothing. They now match the declarations.
 
 - **Production resolved no principal, so the whole API refused with 403.**
   `createServer` installed a principal resolver only when the caller passed one,
@@ -30,8 +64,16 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ### Added
 
-- **Task history is readable.** `GET /tasks/:id/history` returns the task's log
-  newest-first with before and after values, and the detail page renders it as
+- **`GET /ready`, unprefixed and public (ADR 0013).** 200 when the database is
+  reachable and no migrations are pending, 503 otherwise, with a fixed reason
+  rather than the raw SQLite message `/health` publishes for an owner debugging
+  at 2am. Unprefixed because a watchdog does not know which API version is
+  deployed. It and `/health` deliberately differ on pending migrations: the
+  process is up and answering, and also unable to serve, so `/health` stays 200
+  and `/ready` reports 503. Both facts come from one probe, so they cannot drift.
+
+- **Task history is readable.** `GET /api/v1/tasks/:id/history` returns the task's
+  log newest-first with before and after values, and the detail page renders it as
   lines in the server's time zone. Exit-test step 8 was unrunnable without it:
   history was written on every change and visible nowhere.
 

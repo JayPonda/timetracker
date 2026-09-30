@@ -240,6 +240,61 @@ See `apps/api/src/lib/logger.ts` and `apps/web/src/lib/logger.ts`. Two classes,
 not one shared one: they run in different worlds, and what they deliberately share
 is the level names and the line format.
 
+**Renaming a path renames it everywhere, and "everywhere" is wider than the file
+you edited.** Moving a route from `/tasks` to `/api/v1/tasks` rewrote the
+declarations, the fetches and the tests in one pass — and left five
+`logger.debug` labels reading `POST /api/tasks…` in the lines *below* each
+declaration. A `sed` over declarations does not touch the string two lines down
+that says the same path to a human. The consequence is not a crash: it is a
+`grep 'task_id=42'` that finds nothing while the request plainly worked, which
+is the failure mode ground rule 12 exists to prevent.
+
+So: **after any bulk rename, grep the old literal again, in every file it
+touched** — not only the lines the edit reports. `grep -rn "'/api/tasks" apps/`
+took two seconds and found five defects that the test suite rated as green.
+
+### 13. One helper, two callers, two answers
+
+A predicate shared by two call sites is only correct if both callers actually
+want the same answer. Check that before assuming it, because a shared helper
+that has to compromise answers *wrongly* for somebody, silently, and the
+compromise will be written to suit whichever caller was easier to satisfy.
+
+The instance this project paid for, 2026-09-29: the URL scheme
+(`docs/adr/0013-versioned-url-namespaces.md`) needed to ask two questions.
+
+| Question | Answer for `/ui/v1/tasks` |
+| --- | --- |
+| May this URL be **declared** as a route? | **No** — pages are served by the static mount |
+| May this **request** be answered with the app shell? | **Yes** — it is the UI |
+
+One function, `isUnprefixedRouteAllowed`, served both. It had to return `true`
+for the fallback and `false` for the table, so it returned `true` and the route
+table quietly accepted a UI route as a declared one. The split is now
+`isDeclaredRouteAllowed` and `isUiPath`, one caller each.
+
+Why the asymmetry is right, and why it is worth the extra function: a declared
+route acquires a capability guard, and **an HTML response has no principal to
+guard**. Letting a page become a declared route is a category error, not a
+stylistic one — it is the same reasoning that keeps business rules out of
+repositories, expressed about a different layer.
+
+Two rules follow:
+
+- **Two questions that sound alike are not the same question.** "Can this be
+  X?" and "should this be X?" diverge more often than they agree. If you find
+  yourself adding a caller to an existing predicate, check whether the new caller
+  wants a different answer before reusing it.
+- **A test that asks an awkward question is design information.** The test that
+  caught this — *"refuses a UI path, because pages are served by the static mount
+  not declared"* — was written before the implementation was finished and failed
+  on the first run. **A failing test that encodes a rule you have not written down
+  is usually the design telling you its shape**, and is worth reading as a
+  question rather than debugging away.
+
+The same instinct as ground rules 1 and 11: the guarantee belongs in one place,
+and two places that need different answers get two places.
+
 ---
 
 ## Part 3 — Setup from zero
@@ -679,4 +734,5 @@ would create two places to keep in sync — the exact problem `DATA-04` exists t
 | --- | --- |
 | 2026-09-29 | Removed Prettier; `@stylistic` inside ESLint does the formatting. Triggered by watching `prettier --write` reflow 305 lines of `ROADMAP.md` and reformat a test file nobody had edited. `pnpm lint:fix` replaces `pnpm format`. |
 | 2026-09-28 | Rewritten in full, from the beginning, as the project constitution. Standardised on pnpm (was inconsistently documented as npm in ADR 0001). |
+| 2026-09-29 | Added ground rule 13, one helper two callers two answers, after the URL scheme needed one predicate to say both yes and no. Triggered by a test asking whether a UI path may be declared as a route — it may not, and the same path must still be served, so the shared predicate had to be wrong for one caller. |
 | 2026-09-29 | Added ground rule 12, the one logger, and recorded why the browser reads `VITE_LOG_LEVEL` while the API reads `LOG_LEVEL`. Triggered by adding the logger and finding that an unprefixed name in a Vite bundle is `undefined` by construction — it looks configured and logs at the default. |

@@ -25,7 +25,7 @@ async function appThatThrows(throwable: unknown): Promise<TestApp> {
     extraRoutes: [
       {
         method: 'POST',
-        url: '/api/test-throws',
+        url: '/api/v1/test-throws',
         capabilities: [CAPABILITIES.TASK_CREATE],
         description: 'test route whose handler throws',
         handler: async () => {
@@ -42,7 +42,7 @@ describe('criterion 9: a service refusal reaches the client as a named field', (
   it('renders an AppError with its own code and status', async () => {
     const { app } = await appThatThrows(validationFailed('A task may have at most 3 links'));
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} });
     const body = res.json<ErrorEnvelope>();
 
     expect(res.statusCode).toBe(422);
@@ -57,7 +57,7 @@ describe('criterion 9: a service refusal reaches the client as a named field', (
     const { app } = await appThatThrows(validationFailed('name: Required', details));
 
     const body = (
-      await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} })
+      await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} })
     ).json<ErrorEnvelope>();
     const issues = (body.error.details as { issues: Array<{ path: string }> }).issues;
 
@@ -70,7 +70,7 @@ describe('criterion 9: a service refusal reaches the client as a named field', (
     const { app } = await appThatThrows(new AppError(ERROR_CODES.CAPABILITY_DENIED, 'nope'));
 
     const body = (
-      await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} })
+      await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} })
     ).json<ErrorEnvelope>();
     expect(body.error.details).toBeUndefined();
   });
@@ -82,7 +82,7 @@ describe('criterion 9: an unparsed Zod failure is still a 422 naming the field',
     // answer. Falling through to the 500 branch would report it as a server fault.
     const { app } = await appThatThrows(z.object({ name: z.string() }).safeParse({}).error);
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} });
     const body = res.json<ErrorEnvelope>();
 
     expect(res.statusCode).toBe(422);
@@ -100,7 +100,7 @@ describe('a 5xx does not leak its message or its stack', () => {
     );
 
     const body = (
-      await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} })
+      await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} })
     ).json<ErrorEnvelope>();
 
     expect(body.error.message).toBe('Internal server error');
@@ -112,7 +112,7 @@ describe('a 5xx does not leak its message or its stack', () => {
     const { app } = await appThatThrows(new Error('boom'));
 
     const body = (
-      await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} })
+      await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} })
     ).json<ErrorEnvelope>();
     expect(body.error.code).toBe(ERROR_CODES.INTERNAL);
   });
@@ -120,7 +120,7 @@ describe('a 5xx does not leak its message or its stack', () => {
   it('still returns 500', async () => {
     const { app } = await appThatThrows(new Error('boom'));
     expect(
-      (await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} })).statusCode,
+      (await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} })).statusCode,
     ).toBe(500);
   });
 });
@@ -129,21 +129,21 @@ describe('every error response carries the request id', () => {
   it('is present on a refusal', async () => {
     const { app } = await appThatThrows(new AppError(ERROR_CODES.NOT_FOUND, 'gone'));
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} });
     expect(res.json<ErrorEnvelope>().error.request_id).toBeTruthy();
   });
 
   it('is present on a 500', async () => {
     const { app } = await appThatThrows(new Error('boom'));
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-throws', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws', payload: {} });
     expect(res.json<ErrorEnvelope>().error.request_id).toBe(res.headers['x-request-id']);
   });
 
   it('is present on a not-found', async () => {
     const { app } = await createTestApp();
 
-    const res = await app.inject({ method: 'GET', url: '/api/nothing-here' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/nothing-here' });
     expect(res.json<ErrorEnvelope>().error.request_id).toBe(res.headers['x-request-id']);
   });
 
@@ -152,7 +152,7 @@ describe('every error response carries the request id', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/test-throws',
+      url: '/api/v1/test-throws',
       payload: {},
       headers: { 'x-request-id': 'from-the-owner' },
     });
@@ -166,7 +166,7 @@ describe('every error response carries the request id', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/nothing-here',
+      url: '/api/v1/nothing-here',
       headers: { 'x-request-id': 'x'.repeat(5_000) },
     });
 
@@ -179,7 +179,7 @@ describe('every error response carries the request id', () => {
   it('generates a uuid when none is offered', async () => {
     const { app } = await createTestApp();
 
-    const res = await app.inject({ method: 'GET', url: '/api/nothing-here' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/nothing-here' });
     expect(res.json<ErrorEnvelope>().error.request_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
@@ -193,7 +193,7 @@ describe('the response status and the envelope code agree', () => {
       extraRoutes: protectedRoute([CAPABILITIES.TASK_CREATE]),
     });
 
-    const res = await app.inject({ method: 'POST', url: '/api/test-protected', payload: {} });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-protected', payload: {} });
     const body = res.json<ErrorEnvelope>();
 
     // Before the code/status split, a 403 arrived as `validation_failed`, so a

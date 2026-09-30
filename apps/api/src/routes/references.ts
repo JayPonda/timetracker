@@ -43,7 +43,7 @@ export function referenceRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/tasks/:id/references',
+      url: '/api/v1/tasks/:id/references',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'List a task’s reference materials, newest first (FR-REF-01)',
       handler: async (req, reply) => {
@@ -57,14 +57,14 @@ export function referenceRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/tasks/:id/references',
+      url: '/api/v1/tasks/:id/references',
       capabilities: [CAPABILITIES.TASK_CREATE],
       description: 'Add a reference material to a task (FR-REF-01)',
       handler: async (req, reply) => {
         const taskId = parseId((req.params as Record<string, string>).id, 'task');
         const input = parseOrThrow(createReferenceSchema, req.body ?? {});
         const reference = await req.server.services.references.create(taskId, input);
-        logger.debug('references.ts', 'POST /tasks/:id/references', 'created', {
+        logger.debug('references.ts', 'POST /api/v1/tasks/:id/references', 'created', {
           reference_id: reference.id,
           task_id: taskId,
         });
@@ -73,7 +73,7 @@ export function referenceRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'GET',
-      url: '/references/:id',
+      url: '/api/v1/references/:id',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'Read one reference material',
       handler: async (req, reply) => {
@@ -84,7 +84,7 @@ export function referenceRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/references/:id',
+      url: '/api/v1/references/:id',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Edit a reference material (FR-REF-01)',
       handler: async (req, reply) => {
@@ -96,7 +96,7 @@ export function referenceRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/references/:id/archive',
+      url: '/api/v1/references/:id/archive',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Archive a reference material (FR-REF-01)',
       handler: async (req, reply) => {
@@ -107,7 +107,7 @@ export function referenceRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/references/:id/restore',
+      url: '/api/v1/references/:id/restore',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Restore an archived reference material (FR-REF-01)',
       handler: async (req, reply) => {

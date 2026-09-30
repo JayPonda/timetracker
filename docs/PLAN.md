@@ -20,8 +20,8 @@ All data stays on the laptop.
 | Current release | **0.2.0 — Data model & core CRUD** |
 | Status | **In progress.** The schema layer is done — 15 tables, `uid`/`archived_at`, the 13 no-delete triggers, the 3-link trigger, the one-timer index and the closure check constraint, asserted by 57 tests in `schema.test.ts`. The application layer is not started: no `services/`, no `views/`, no `middleware/`, no routes beyond `/health`, no web UI beyond the health shell |
 | Completed releases | [`0.1.0`](RELEASES/v0.1.0.md) — Foundation & runtime, tagged `v0.1.0` 2026-09-29 |
-| Spec for the current release | [`RELEASES/v0.2.0.md`](RELEASES/v0.2.0.md) — written 2026-09-29; **5 of 14 acceptance criteria done, 5 half, 4 not started** |
-| Next release after that | 0.3.0 — Time tracking & timer. **Blocked**: a release does not start until the previous exit test has passed, and 0.2.0's exit test drives a UI that does not exist yet (the foundation layer landed 2026-09-29; the entity services, routes and UI are what remain) |
+| Spec for the current release | [`RELEASES/v0.2.0.md`](RELEASES/v0.2.0.md) — written 2026-09-29; **15 of 15 acceptance criteria met; the exit test is runnable and awaits the owner** |
+| Next release after that | 0.3.0 — Time tracking & timer. **Blocked**: a release does not start until the previous exit test has passed, and 0.2.0's exit test needs a human to drive the rebuilt container (`docker compose up -d --build`, then walk the 13 steps at `http://127.0.0.1:9090/ui/v1/tasks`) |
 | Blocking questions | `OQ-1`…`OQ-8` in [`ROADMAP.md` §9](ROADMAP.md#9-open-questions-for-the-owner) — all currently using the stated default, so nothing is blocked |
 
 ## The twelve releases, in order

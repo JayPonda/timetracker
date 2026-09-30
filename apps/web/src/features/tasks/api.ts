@@ -71,7 +71,7 @@ export async function fetchTasks(signal: AbortSignal, filters: TaskFilters): Pro
   params.set('direction', filters.direction);
   if (filters.includeArchived) params.set('include_archived', 'true');
 
-  const res = await fetch(`/tasks?${params.toString()}`, {
+  const res = await fetch(`/api/v1/tasks?${params.toString()}`, {
     signal,
     headers: { accept: 'application/json' },
   });
@@ -81,13 +81,13 @@ export async function fetchTasks(signal: AbortSignal, filters: TaskFilters): Pro
 
 /** Live projects for the picker. Archived ones are never offered (`DATA-11`). */
 export async function fetchLiveProjects(signal: AbortSignal): Promise<Project[]> {
-  const res = await fetch('/projects', { signal, headers: { accept: 'application/json' } });
+  const res = await fetch('/api/v1/projects', { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw await apiError(res, 'Could not load projects');
   return listProjectsResponseSchema.parse(await res.json()).projects;
 }
 
 export async function createTask(input: CreateTaskInput): Promise<Task> {
-  const res = await fetch('/tasks', {
+  const res = await fetch('/api/v1/tasks', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -96,7 +96,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
 }
 
 export async function updateTask(id: number, input: UpdateTaskInput): Promise<Task> {
-  const res = await fetch(`/tasks/${id}`, {
+  const res = await fetch(`/api/v1/tasks/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -105,7 +105,7 @@ export async function updateTask(id: number, input: UpdateTaskInput): Promise<Ta
 }
 
 export async function archiveTask(id: number): Promise<Task> {
-  const res = await fetch(`/tasks/${id}/archive`, {
+  const res = await fetch(`/api/v1/tasks/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -113,7 +113,7 @@ export async function archiveTask(id: number): Promise<Task> {
 }
 
 export async function restoreTask(id: number): Promise<Task> {
-  const res = await fetch(`/tasks/${id}/restore`, {
+  const res = await fetch(`/api/v1/tasks/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -121,12 +121,12 @@ export async function restoreTask(id: number): Promise<Task> {
 }
 
 export async function fetchTask(signal: AbortSignal, id: number): Promise<Task> {
-  const res = await fetch(`/tasks/${id}`, { signal, headers: { accept: 'application/json' } });
+  const res = await fetch(`/api/v1/tasks/${id}`, { signal, headers: { accept: 'application/json' } });
   return readTask(res, 'Could not load the task');
 }
 
 export async function fetchHistory(signal: AbortSignal, taskId: number): Promise<HistoryEntry[]> {
-  const res = await fetch(`/tasks/${taskId}/history`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/history`, {
     signal,
     headers: { accept: 'application/json' },
   });
@@ -140,8 +140,8 @@ export async function fetchTodos(
   includeArchived: boolean,
 ): Promise<Todo[]> {
   const path = includeArchived
-    ? `/tasks/${taskId}/todos?include_archived=true`
-    : `/tasks/${taskId}/todos`;
+    ? `/api/v1/tasks/${taskId}/todos?include_archived=true`
+    : `/api/v1/tasks/${taskId}/todos`;
   const res = await fetch(path, { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw await apiError(res, 'Could not load todos');
   return listTodosResponseSchema.parse(await res.json()).todos;
@@ -153,7 +153,7 @@ async function readTodo(res: Response, fallback: string): Promise<Todo> {
 }
 
 export async function createTodo(taskId: number, input: CreateTodoInput): Promise<Todo> {
-  const res = await fetch(`/tasks/${taskId}/todos`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/todos`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -162,7 +162,7 @@ export async function createTodo(taskId: number, input: CreateTodoInput): Promis
 }
 
 export async function updateTodo(id: number, input: UpdateTodoInput): Promise<Todo> {
-  const res = await fetch(`/todos/${id}`, {
+  const res = await fetch(`/api/v1/todos/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -171,7 +171,7 @@ export async function updateTodo(id: number, input: UpdateTodoInput): Promise<To
 }
 
 export async function reorderTodos(taskId: number, order: readonly number[]): Promise<Todo[]> {
-  const res = await fetch(`/tasks/${taskId}/todos/reorder`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/todos/reorder`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({ order }),
@@ -181,7 +181,7 @@ export async function reorderTodos(taskId: number, order: readonly number[]): Pr
 }
 
 export async function archiveTodo(id: number): Promise<Todo> {
-  const res = await fetch(`/todos/${id}/archive`, {
+  const res = await fetch(`/api/v1/todos/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -189,7 +189,7 @@ export async function archiveTodo(id: number): Promise<Todo> {
 }
 
 export async function restoreTodo(id: number): Promise<Todo> {
-  const res = await fetch(`/todos/${id}/restore`, {
+  const res = await fetch(`/api/v1/todos/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -199,7 +199,7 @@ export async function restoreTodo(id: number): Promise<Todo> {
 export async function fetchTaskLinks(signal: AbortSignal, taskId: number): Promise<TaskLink[]> {
   // Archived links render in their own subsection, so they are fetched, not
   // filtered. The subsection is the `DATA-11` opt-in, stated in words.
-  const res = await fetch(`/tasks/${taskId}/links?include_archived=true`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/links?include_archived=true`, {
     signal,
     headers: { accept: 'application/json' },
   });
@@ -213,7 +213,7 @@ async function readTaskLink(res: Response, fallback: string): Promise<TaskLink> 
 }
 
 export async function createTaskLink(taskId: number, input: CreateTaskLinkInput): Promise<TaskLink> {
-  const res = await fetch(`/tasks/${taskId}/links`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/links`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -222,7 +222,7 @@ export async function createTaskLink(taskId: number, input: CreateTaskLinkInput)
 }
 
 export async function updateTaskLink(id: number, input: UpdateTaskLinkInput): Promise<TaskLink> {
-  const res = await fetch(`/task-links/${id}`, {
+  const res = await fetch(`/api/v1/task-links/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -231,7 +231,7 @@ export async function updateTaskLink(id: number, input: UpdateTaskLinkInput): Pr
 }
 
 export async function archiveTaskLink(id: number): Promise<TaskLink> {
-  const res = await fetch(`/task-links/${id}/archive`, {
+  const res = await fetch(`/api/v1/task-links/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -239,7 +239,7 @@ export async function archiveTaskLink(id: number): Promise<TaskLink> {
 }
 
 export async function restoreTaskLink(id: number): Promise<TaskLink> {
-  const res = await fetch(`/task-links/${id}/restore`, {
+  const res = await fetch(`/api/v1/task-links/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -252,8 +252,8 @@ export async function fetchCriteria(
   includeArchived: boolean,
 ): Promise<Criterion[]> {
   const path = includeArchived
-    ? `/tasks/${taskId}/criteria?include_archived=true`
-    : `/tasks/${taskId}/criteria`;
+    ? `/api/v1/tasks/${taskId}/criteria?include_archived=true`
+    : `/api/v1/tasks/${taskId}/criteria`;
   const res = await fetch(path, { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw await apiError(res, 'Could not load acceptance criteria');
   return listCriteriaResponseSchema.parse(await res.json()).criteria;
@@ -265,7 +265,7 @@ async function readCriterion(res: Response, fallback: string): Promise<Criterion
 }
 
 export async function createCriterion(taskId: number, input: CreateCriterionInput): Promise<Criterion> {
-  const res = await fetch(`/tasks/${taskId}/criteria`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/criteria`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -274,7 +274,7 @@ export async function createCriterion(taskId: number, input: CreateCriterionInpu
 }
 
 export async function updateCriterion(id: number, input: UpdateCriterionInput): Promise<Criterion> {
-  const res = await fetch(`/criteria/${id}`, {
+  const res = await fetch(`/api/v1/criteria/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -283,7 +283,7 @@ export async function updateCriterion(id: number, input: UpdateCriterionInput): 
 }
 
 export async function reorderCriteria(taskId: number, order: readonly number[]): Promise<Criterion[]> {
-  const res = await fetch(`/tasks/${taskId}/criteria/reorder`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/criteria/reorder`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({ order }),
@@ -293,7 +293,7 @@ export async function reorderCriteria(taskId: number, order: readonly number[]):
 }
 
 export async function archiveCriterion(id: number): Promise<Criterion> {
-  const res = await fetch(`/criteria/${id}/archive`, {
+  const res = await fetch(`/api/v1/criteria/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -301,7 +301,7 @@ export async function archiveCriterion(id: number): Promise<Criterion> {
 }
 
 export async function restoreCriterion(id: number): Promise<Criterion> {
-  const res = await fetch(`/criteria/${id}/restore`, {
+  const res = await fetch(`/api/v1/criteria/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -311,7 +311,7 @@ export async function restoreCriterion(id: number): Promise<Criterion> {
 export async function fetchReferences(signal: AbortSignal, taskId: number): Promise<Reference[]> {
   // Archived references render in their own subsection, so they are fetched,
   // not filtered — the subsection is the `DATA-11` opt-in, stated in words.
-  const res = await fetch(`/tasks/${taskId}/references?include_archived=true`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/references?include_archived=true`, {
     signal,
     headers: { accept: 'application/json' },
   });
@@ -325,7 +325,7 @@ async function readReference(res: Response, fallback: string): Promise<Reference
 }
 
 export async function createReference(taskId: number, input: CreateReferenceInput): Promise<Reference> {
-  const res = await fetch(`/tasks/${taskId}/references`, {
+  const res = await fetch(`/api/v1/tasks/${taskId}/references`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -334,7 +334,7 @@ export async function createReference(taskId: number, input: CreateReferenceInpu
 }
 
 export async function updateReference(id: number, input: UpdateReferenceInput): Promise<Reference> {
-  const res = await fetch(`/references/${id}`, {
+  const res = await fetch(`/api/v1/references/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -343,7 +343,7 @@ export async function updateReference(id: number, input: UpdateReferenceInput): 
 }
 
 export async function archiveReference(id: number): Promise<Reference> {
-  const res = await fetch(`/references/${id}/archive`, {
+  const res = await fetch(`/api/v1/references/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -351,7 +351,7 @@ export async function archiveReference(id: number): Promise<Reference> {
 }
 
 export async function restoreReference(id: number): Promise<Reference> {
-  const res = await fetch(`/references/${id}/restore`, {
+  const res = await fetch(`/api/v1/references/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });

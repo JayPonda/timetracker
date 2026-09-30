@@ -36,7 +36,7 @@ describe('FR-TAG-01: POST /tags creates a tag', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/tags',
+      url: '/api/v1/tags',
       payload: { name: 'review' },
     });
 
@@ -48,9 +48,9 @@ describe('FR-TAG-01: POST /tags creates a tag', () => {
 
   it('refuses a duplicate live name with a 422 naming it', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
-    await app.inject({ method: 'POST', url: '/tags', payload: { name: 'review' } });
+    await app.inject({ method: 'POST', url: '/api/v1/tags', payload: { name: 'review' } });
 
-    const res = await app.inject({ method: 'POST', url: '/tags', payload: { name: 'review' } });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/tags', payload: { name: 'review' } });
     const body = res.json<ErrorEnvelope>();
 
     expect(res.statusCode).toBe(422);
@@ -63,23 +63,23 @@ describe('FR-TAG-05: PATCH /tags/:id/archive hides, PATCH /tags/:id/restore brin
   it('archives and restores through PATCH', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
     const created = tagSchema.parse(
-      (await app.inject({ method: 'POST', url: '/tags', payload: { name: 'review' } })).json<{
+      (await app.inject({ method: 'POST', url: '/api/v1/tags', payload: { name: 'review' } })).json<{
         tag: unknown;
       }>().tag,
     );
 
     const archived = tagSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/tags/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/tags/${created.id}/archive` })).json<{
         tag: unknown;
       }>().tag,
     );
     expect(archived.archived_at).not.toBeNull();
 
-    const listed = await app.inject({ method: 'GET', url: '/tags' });
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/tags' });
     expect(listed.json<{ tags: unknown[] }>().tags).toEqual([]);
 
     const restored = tagSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/tags/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/tags/${created.id}/restore` })).json<{
         tag: unknown;
       }>().tag,
     );
@@ -91,9 +91,9 @@ describe('MCP-14: the assistant may read and create tags but may never mutate th
   it('allows GET and POST with the assistant capability set', async () => {
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
-    expect((await app.inject({ method: 'GET', url: '/tags' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/tags' })).statusCode).toBe(200);
     expect(
-      (await app.inject({ method: 'POST', url: '/tags', payload: { name: 'review' } })).statusCode,
+      (await app.inject({ method: 'POST', url: '/api/v1/tags', payload: { name: 'review' } })).statusCode,
     ).toBe(201);
   });
 
@@ -101,9 +101,9 @@ describe('MCP-14: the assistant may read and create tags but may never mutate th
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
     for (const req of [
-      { method: 'PATCH', url: '/tags/1', payload: { name: 'Assistant rename' } },
-      { method: 'PATCH', url: '/tags/1/archive', payload: {} },
-      { method: 'PATCH', url: '/tags/1/restore', payload: {} },
+      { method: 'PATCH', url: '/api/v1/tags/1', payload: { name: 'Assistant rename' } },
+      { method: 'PATCH', url: '/api/v1/tags/1/archive', payload: {} },
+      { method: 'PATCH', url: '/api/v1/tags/1/restore', payload: {} },
     ] as const) {
       const res = await app.inject(req);
       expect(res.statusCode).toBe(403);

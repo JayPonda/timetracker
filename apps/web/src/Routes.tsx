@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { App } from './App';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { TaskDetailPage } from './features/tasks/TaskDetailPage';
@@ -7,15 +7,19 @@ import { TasksPage } from './features/tasks/TasksPage';
 import { TagsPage } from './features/tags/TagsPage';
 
 /**
- * Routing.
+ * Routing, relative to the UI base (ADR 0013).
  *
- * The catch-all is `/`, not a 404 page, because every destination belongs to a
- * release that has not been built yet. A real 404 page is still required by
- * acceptance criterion 12, so an unknown path that is *not* a known destination
- * lands on the not-found page below.
+ * **Every path here is written without `/ui/v1`.** The router runs with
+ * `basename={UI_V1}` (see `main.tsx`), which is the single place the prefix is
+ * declared for the browser, and it both matches and generates links with the
+ * prefix attached. Writing `/ui/v1/tasks` in a `<Route>` while the basename is
+ * also `/ui/v1` is the mistake this arrangement exists to prevent: it matches
+ * `/ui/v1/ui/v1/tasks`, and it fails at runtime as a blank screen rather than as
+ * a build error.
+ *
+ * The API is not here at all — it lives under `/api/v1` and is reached by
+ * `fetch` from the feature `api.ts` modules, never by the router.
  */
-const KNOWN_PATHS = new Set(['/', '/projects', '/tasks', '/tags', '/not-found']);
-
 export function Routes_(): JSX.Element {
   return (
     <Routes>
@@ -25,7 +29,18 @@ export function Routes_(): JSX.Element {
       <Route path="/tasks/:id" element={<TaskDetailPage />} />
       <Route path="/tags" element={<TagsPage />} />
       <Route path="/not-found" element={<NotFound />} />
-      <Route path="*" element={<Navigate to={KNOWN_PATHS.has(location.pathname) ? '/' : '/not-found'} replace />} />
+      {/*
+        Anything else is genuinely unknown, so it goes to the not-found page.
+
+        An earlier version redirected unknown paths to `/` instead, on the
+        reasoning that every destination belongs to a release that has not been
+        built yet. That is no longer true — four real screens exist, and
+        acceptance criterion 12 asks for a real 404 — and a `Navigate` to a route
+        that is itself rendered by this `Routes` is one loop away from a blank
+        screen. `/not-found` is matched by the line above, so this cannot
+        redirect to itself.
+      */}
+      <Route path="*" element={<Navigate to="/not-found" replace />} />
     </Routes>
   );
 }
@@ -38,9 +53,17 @@ function NotFound(): JSX.Element {
         <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
           That address does not match anything in this app.
         </p>
-        <a href="/" className="mt-4 inline-block px-3 py-2 rounded border border-neutral-300 dark:border-neutral-700">
+        {/*
+          `Link`, not `<a href="/">`. A plain anchor bypasses the router, so it
+          would have to spell out the `/ui` prefix itself and would reload the
+          whole bundle to get there.
+        */}
+        <Link
+          to="/"
+          className="mt-4 inline-block px-3 py-2 rounded border border-neutral-300 dark:border-neutral-700"
+        >
           Back to the start
-        </a>
+        </Link>
       </div>
     </div>
   );

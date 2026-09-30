@@ -38,7 +38,7 @@ describe('FR-TASK-01: POST /tasks creates a task', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/tasks',
+      url: '/api/v1/tasks',
       payload: { name: 'Write the spec', estimate_hours: 2.5 },
     });
 
@@ -55,7 +55,7 @@ describe('FR-STAT-01: no route can set ended', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/tasks',
+      url: '/api/v1/tasks',
       payload: { name: 'A', status: 'ended' },
     });
     const body = res.json<ErrorEnvelope>();
@@ -70,14 +70,14 @@ describe('FR-STAT-01: no route can set ended', () => {
   it('rejects ended on update with a 422 naming the field', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
     const created = taskSchema.parse(
-      (await app.inject({ method: 'POST', url: '/tasks', payload: { name: 'A' } })).json<{
+      (await app.inject({ method: 'POST', url: '/api/v1/tasks', payload: { name: 'A' } })).json<{
         task: unknown;
       }>().task,
     );
 
     const res = await app.inject({
       method: 'PATCH',
-      url: `/tasks/${created.id}`,
+      url: `/api/v1/tasks/${created.id}`,
       payload: { status: 'ended' },
     });
 
@@ -116,8 +116,8 @@ describe('FR-VIEW-03: GET /tasks filters to the “No project” bucket and sort
       due_date: null,
     });
 
-    const bucket = await app.inject({ method: 'GET', url: '/tasks?project_id=none' });
-    const sorted = await app.inject({ method: 'GET', url: '/tasks?sort=name&direction=asc' });
+    const bucket = await app.inject({ method: 'GET', url: '/api/v1/tasks?project_id=none' });
+    const sorted = await app.inject({ method: 'GET', url: '/api/v1/tasks?sort=name&direction=asc' });
 
     expect(
       bucket.json<{ tasks: Array<{ name: string }> }>().tasks.map((task) => task.name),
@@ -132,20 +132,20 @@ describe('FR-TASK-13: archive and restore are reversible PATCH routes', () => {
   it('archives with PATCH and restores with PATCH', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
     const created = taskSchema.parse(
-      (await app.inject({ method: 'POST', url: '/tasks', payload: { name: 'A' } })).json<{
+      (await app.inject({ method: 'POST', url: '/api/v1/tasks', payload: { name: 'A' } })).json<{
         task: unknown;
       }>().task,
     );
 
     const archived = taskSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/tasks/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/tasks/${created.id}/archive` })).json<{
         task: unknown;
       }>().task,
     );
     expect(archived.archived_at).not.toBeNull();
 
     const restored = taskSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/tasks/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/tasks/${created.id}/restore` })).json<{
         task: unknown;
       }>().task,
     );
@@ -157,7 +157,7 @@ describe('path and missing tasks are answered precisely', () => {
   it('rejects a non-numeric id before touching the service', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
 
-    const res = await app.inject({ method: 'GET', url: '/tasks/not-a-number' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/tasks/not-a-number' });
 
     expect(res.statusCode).toBe(422);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.VALIDATION_FAILED);
@@ -166,7 +166,7 @@ describe('path and missing tasks are answered precisely', () => {
   it('answers 404 for a task that does not exist', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
 
-    const res = await app.inject({ method: 'GET', url: '/tasks/999' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/tasks/999' });
 
     expect(res.statusCode).toBe(404);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
@@ -177,18 +177,18 @@ describe('FR-STAT-05: GET /tasks/:id/history shows both status changes', () => {
   it('lists newest first with before and after values', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
     const created = taskSchema.parse(
-      (await app.inject({ method: 'POST', url: '/tasks', payload: { name: 'A' } })).json<{
+      (await app.inject({ method: 'POST', url: '/api/v1/tasks', payload: { name: 'A' } })).json<{
         task: unknown;
       }>().task,
     );
     await app.inject({
       method: 'PATCH',
-      url: `/tasks/${created.id}`,
+      url: `/api/v1/tasks/${created.id}`,
       payload: { status: 'in_progress' },
     });
-    await app.inject({ method: 'PATCH', url: `/tasks/${created.id}`, payload: { status: 'open' } });
+    await app.inject({ method: 'PATCH', url: `/api/v1/tasks/${created.id}`, payload: { status: 'open' } });
 
-    const res = await app.inject({ method: 'GET', url: `/tasks/${created.id}/history` });
+    const res = await app.inject({ method: 'GET', url: `/api/v1/tasks/${created.id}/history` });
 
     expect(res.statusCode).toBe(200);
     const history = listHistoryResponseSchema.parse(res.json()).history;
@@ -207,7 +207,7 @@ describe('FR-STAT-05: GET /tasks/:id/history shows both status changes', () => {
   it('answers 404 for a task that does not exist', async () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
 
-    const res = await app.inject({ method: 'GET', url: '/tasks/999/history' });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/tasks/999/history' });
 
     expect(res.statusCode).toBe(404);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
@@ -218,10 +218,10 @@ describe('MCP-14: the assistant may read and create tasks but may never mutate t
   it('allows GET and POST with the assistant capability set', async () => {
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
-    expect((await app.inject({ method: 'GET', url: '/tasks' })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/tasks' })).statusCode).toBe(200);
     expect(
       (
-        await app.inject({ method: 'POST', url: '/tasks', payload: { name: 'Assistant task' } })
+        await app.inject({ method: 'POST', url: '/api/v1/tasks', payload: { name: 'Assistant task' } })
       ).statusCode,
     ).toBe(201);
   });
@@ -234,7 +234,7 @@ describe('MCP-14: the assistant may read and create tasks but may never mutate t
 
     const res = await app.inject({
       method: 'PATCH',
-      url: '/tasks/1',
+      url: '/api/v1/tasks/1',
       payload: { name: 'Assistant rename' },
     });
 

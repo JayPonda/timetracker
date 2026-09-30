@@ -53,7 +53,7 @@ describe('FR-REF-01: POST /tasks/:id/references adds a reference', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/references`,
+      url: `/api/v1/tasks/${taskId}/references`,
       payload: { title: 'What I learned', type: 'lesson' },
     });
 
@@ -69,7 +69,7 @@ describe('FR-REF-01: POST /tasks/:id/references adds a reference', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/references`,
+      url: `/api/v1/tasks/${taskId}/references`,
       payload: { title: 'T', type: 'attachment' },
     });
 
@@ -86,7 +86,7 @@ describe('FR-REF-01: PATCH /references/:id edits, archives and restores', () => 
       (
         await app.inject({
           method: 'POST',
-          url: `/tasks/${taskId}/references`,
+          url: `/api/v1/tasks/${taskId}/references`,
           payload: { title: 'Notes', body: 'Old words' },
         })
       ).json<{ reference: unknown }>().reference,
@@ -96,7 +96,7 @@ describe('FR-REF-01: PATCH /references/:id edits, archives and restores', () => 
       (
         await app.inject({
           method: 'PATCH',
-          url: `/references/${created.id}`,
+          url: `/api/v1/references/${created.id}`,
           payload: { body: 'New words' },
         })
       ).json<{ reference: unknown }>().reference,
@@ -104,14 +104,14 @@ describe('FR-REF-01: PATCH /references/:id edits, archives and restores', () => 
     expect(edited.body).toBe('New words');
 
     const archived = referenceSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/references/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/references/${created.id}/archive` })).json<{
         reference: unknown;
       }>().reference,
     );
     expect(archived.archived_at).not.toBeNull();
 
     const restored = referenceSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/references/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/references/${created.id}/restore` })).json<{
         reference: unknown;
       }>().reference,
     );
@@ -128,7 +128,7 @@ describe('MCP-14: the assistant may add references but may never change them', (
       (
         await app.inject({
           method: 'POST',
-          url: `/tasks/${taskId}/references`,
+          url: `/api/v1/tasks/${taskId}/references`,
           payload: { title: 'Assistant note' },
         })
       ).statusCode,
@@ -139,9 +139,9 @@ describe('MCP-14: the assistant may add references but may never change them', (
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
     for (const req of [
-      { method: 'PATCH', url: '/references/1', payload: { body: 'Assistant edit' } },
-      { method: 'PATCH', url: '/references/1/archive', payload: {} },
-      { method: 'PATCH', url: '/references/1/restore', payload: {} },
+      { method: 'PATCH', url: '/api/v1/references/1', payload: { body: 'Assistant edit' } },
+      { method: 'PATCH', url: '/api/v1/references/1/archive', payload: {} },
+      { method: 'PATCH', url: '/api/v1/references/1/restore', payload: {} },
     ] as const) {
       const res = await app.inject(req);
       expect(res.statusCode).toBe(403);

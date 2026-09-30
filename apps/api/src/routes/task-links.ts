@@ -43,7 +43,7 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/tasks/:id/links',
+      url: '/api/v1/tasks/:id/links',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'List a task’s links in slot order (FR-TASK-03)',
       handler: async (req, reply) => {
@@ -57,14 +57,14 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/tasks/:id/links',
+      url: '/api/v1/tasks/:id/links',
       capabilities: [CAPABILITIES.TASK_CREATE],
       description: 'Add a link to a task; the 4th is refused (FR-TASK-03, BR-04)',
       handler: async (req, reply) => {
         const taskId = parseId((req.params as Record<string, string>).id, 'task');
         const input = parseOrThrow(createTaskLinkSchema, req.body ?? {});
         const link = await req.server.services.taskLinks.create(taskId, input);
-        logger.debug('task-links.ts', 'POST /tasks/:id/links', 'created', {
+        logger.debug('task-links.ts', 'POST /api/v1/tasks/:id/links', 'created', {
           link_id: link.id,
           task_id: taskId,
         });
@@ -73,7 +73,7 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'GET',
-      url: '/task-links/:id',
+      url: '/api/v1/task-links/:id',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'Read one task link',
       handler: async (req, reply) => {
@@ -84,7 +84,7 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/task-links/:id',
+      url: '/api/v1/task-links/:id',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Edit a task link’s label or URL (FR-TASK-03)',
       handler: async (req, reply) => {
@@ -96,7 +96,7 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/task-links/:id/archive',
+      url: '/api/v1/task-links/:id/archive',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Archive a task link, freeing its slot (FR-TASK-03)',
       handler: async (req, reply) => {
@@ -107,7 +107,7 @@ export function taskLinkRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'PATCH',
-      url: '/task-links/:id/restore',
+      url: '/api/v1/task-links/:id/restore',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'Restore an archived task link into a free slot (FR-TASK-03)',
       handler: async (req, reply) => {

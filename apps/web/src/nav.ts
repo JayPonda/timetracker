@@ -9,7 +9,13 @@
  */
 
 export interface NavItem {
-  /** Route path. Shown even when `enabled` is false. */
+  /**
+   * Route path, **relative to the UI base**.
+   *
+   * The router's `basename` adds `/ui/v1` (ADR 0013), so a path here is written
+   * `/tasks` and reaches the browser as `/ui/v1/tasks`. Writing the prefix in
+   * here as well would make it `/ui/v1/ui/v1/tasks`, which matches nothing.
+   */
   path: string;
   label: string;
   /** Plain language, per NFR-USE-02. */

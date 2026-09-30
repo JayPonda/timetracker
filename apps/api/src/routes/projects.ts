@@ -22,7 +22,7 @@ import type { RouteDeclaration } from './table.js';
  * this file it belongs in `project.service.ts` (ground rule 1).
  */
 
-const ID_PARAM = '/projects/:id';
+const ID_PARAM = '/api/v1/projects/:id';
 
 function parseId(raw: unknown): number {
   const id = Number(raw);
@@ -52,7 +52,7 @@ export function projectRoutes(): readonly RouteDeclaration[] {
   return [
     {
       method: 'GET',
-      url: '/projects',
+      url: '/api/v1/projects',
       capabilities: [CAPABILITIES.PROJECT_READ],
       description: 'List projects, archived ones only when asked for (DATA-11)',
       handler: async (req, reply) => {
@@ -76,13 +76,13 @@ export function projectRoutes(): readonly RouteDeclaration[] {
     },
     {
       method: 'POST',
-      url: '/projects',
+      url: '/api/v1/projects',
       capabilities: [CAPABILITIES.PROJECT_WRITE],
       description: 'Create a project (FR-PRJ-01)',
       handler: async (req, reply) => {
         const input = parseOrThrow(createProjectSchema, req.body ?? {});
         const project = await req.server.services.projects.create(input);
-        logger.debug('projects.ts', 'POST /projects', 'created', { project_id: project.id });
+        logger.debug('projects.ts', 'POST /api/projects', 'created', { project_id: project.id });
         return reply.status(201).send({ project });
       },
     },

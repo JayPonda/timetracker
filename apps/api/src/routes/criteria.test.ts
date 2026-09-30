@@ -53,7 +53,7 @@ describe('FR-AC-01: POST /tasks/:id/criteria adds a criterion', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/criteria`,
+      url: `/api/v1/tasks/${taskId}/criteria`,
       payload: { text: 'Reads cleanly' },
     });
 
@@ -69,7 +69,7 @@ describe('FR-AC-01: POST /tasks/:id/criteria adds a criterion', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/tasks/${taskId}/criteria`,
+      url: `/api/v1/tasks/${taskId}/criteria`,
       payload: { text: '   ' },
     });
 
@@ -91,7 +91,7 @@ describe('FR-AC-01: PATCH /tasks/:id/criteria/reorder reorders', () => {
 
     const res = await app.inject({
       method: 'PATCH',
-      url: `/tasks/${taskId}/criteria/reorder`,
+      url: `/api/v1/tasks/${taskId}/criteria/reorder`,
       payload: { order: [b.id, a.id] },
     });
 
@@ -108,14 +108,14 @@ describe('FR-AC-01: PATCH /tasks/:id/criteria/reorder reorders', () => {
     const created = await servicesOf(app).criteria.create(taskId, { text: 'A' });
 
     const archived = criterionSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/criteria/${created.id}/archive` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/criteria/${created.id}/archive` })).json<{
         criterion: unknown;
       }>().criterion,
     );
     expect(archived.archived_at).not.toBeNull();
 
     const restored = criterionSchema.parse(
-      (await app.inject({ method: 'PATCH', url: `/criteria/${created.id}/restore` })).json<{
+      (await app.inject({ method: 'PATCH', url: `/api/v1/criteria/${created.id}/restore` })).json<{
         criterion: unknown;
       }>().criterion,
     );
@@ -132,7 +132,7 @@ describe('MCP-14: the assistant may add criteria but may never change them', () 
       (
         await app.inject({
           method: 'POST',
-          url: `/tasks/${taskId}/criteria`,
+          url: `/api/v1/tasks/${taskId}/criteria`,
           payload: { text: 'Assistant criterion' },
         })
       ).statusCode,
@@ -143,10 +143,10 @@ describe('MCP-14: the assistant may add criteria but may never change them', () 
     const { app } = await appHolding({ holds: MCP_MAX_CAPABILITIES, kind: 'mcp_token' });
 
     for (const req of [
-      { method: 'PATCH', url: '/criteria/1', payload: { text: 'Assistant restatement' } },
-      { method: 'PATCH', url: '/tasks/1/criteria/reorder', payload: { order: [1] } },
-      { method: 'PATCH', url: '/criteria/1/archive', payload: {} },
-      { method: 'PATCH', url: '/criteria/1/restore', payload: {} },
+      { method: 'PATCH', url: '/api/v1/criteria/1', payload: { text: 'Assistant restatement' } },
+      { method: 'PATCH', url: '/api/v1/tasks/1/criteria/reorder', payload: { order: [1] } },
+      { method: 'PATCH', url: '/api/v1/criteria/1/archive', payload: {} },
+      { method: 'PATCH', url: '/api/v1/criteria/1/restore', payload: {} },
     ] as const) {
       const res = await app.inject(req);
       expect(res.statusCode).toBe(403);

@@ -692,6 +692,44 @@ web app had never made a single API call and `App.tsx` claimed otherwise in a co
 
 ---
 
+## 2026-09-29 — URLs are versioned and split in two namespaces (ADR 0013)
+
+The app is now at `http://127.0.0.1:9090/ui/v1/tasks`. JSON moved to `/api/v1`, pages and
+assets to `/ui/v1`, and only `/health`, `/ready` and `/` stayed unprefixed. `/` answers
+308 to the first screen. **No aliases** — `/tasks`, `/api/tasks` and `/ui` are 404.
+
+Three things worth keeping, none of which were obvious beforehand:
+
+**A test asked the question my design had merged.** I first wrote one predicate,
+`isUnprefixedRouteAllowed`, used by both `RouteTable.declare` and the SPA fallback. Those
+need *different* answers: the fallback must allow `/ui/v1/…`, while a declared route must
+**not** include a UI path — a page acquiring a capability guard is a category error, because
+an HTML response has no principal. One function had to be wrong for one of its callers. The
+test "refuses a UI path" failed and the answer was to split them into `isDeclaredRouteAllowed`
+and `isUiPath`. Worth remembering as a shape: *when one helper is passed to two callers,
+check that both callers want the same answer before assuming they do.*
+
+**The old fallback's negative condition was the real defect.** It asked "is this path under
+`/api`", so every *other* unprefixed path was answered with HTML — a mistyped `/tasks`
+returned the entire app shell with a 200, and a client could not tell a wrong URL from a
+right one. Replacing it with the positive `isUiPath` is what actually fixed the bug. The
+version prefix was the vehicle; the ambiguity was the disease.
+
+**Five log labels were missed by a `sed` that only touched declarations.** After moving the
+routes to `/api/v1`, five `logger.debug` labels still read `POST /api/tasks…`, so grepping a
+route in the logs found nothing. A bulk rename of *declarations* does not rename the string
+in a log line in the next two lines of code. **Grep for the old literal afterwards, in every
+file it touched, not only in the lines you edited.**
+
+Also learned here: two of the "defects" I chased while smoke-testing against the live
+container were my own probe artifacts, not bugs — a 422 on archiving an already-archived task
+is correct refusal (FR-TASK-13), and a 404 on an archived task's history is pre-existing
+archived-filtering behaviour, unchanged on `HEAD`. The general lesson stands and matches an
+earlier entry in this file: **verify against the committed code before calling something a
+regression**, or you "fix" correct behaviour and add the opposite assertion to the suite.
+
+---
+
 ## Open threads
 
 Things a future session should not have to rediscover. Checked and ticked when done.
@@ -704,7 +742,7 @@ Things a future session should not have to rediscover. Checked and ticked when d
 - [x] **`better-sqlite3` builds correctly**: `onlyBuiltDependencies` and `allowBuilds` are set
       in `pnpm-workspace.yaml` (pnpm 11 ignores a `pnpm` field in `package.json`). Note the
       docs still describe the old `package.json` form in places.
-- [ ] **0.2.0 has its foundation but not its entities.** The schema is complete and tested, and
+- [x] **0.2.0 has its foundation but not its entities.** The schema is complete and tested, and
       the three layers now exist: `apps/api/src/{lib,middleware,routes,repositories,services}/`,
       with the error envelope, the principal seam, the declared-route table, the activity log
       and the first service. Still missing: `apps/api/src/views/`, the entity services
@@ -713,6 +751,25 @@ Things a future session should not have to rediscover. Checked and ticked when d
       half, 4 are not started. The exit test still cannot be run**, because it drives a UI.
       Full breakdown in [`docs/RELEASES/v0.2.0.md`](docs/RELEASES/v0.2.0.md). The next session
       that touches 0.2.0 should start with the entity services and routes, not more foundation.
+- [x] **Entity services, routes and screens all landed** (project, task, todo, tag, link,
+      criteria, reference), so the release's criteria are met and the exit test is runnable. The
+      URL scheme was split and versioned the same day — see the 2026-09-29 entry above and
+      ADR 0013 — which changed every URL in the app, the tests and the exit-test script. Still
+      outstanding for the release: **0.2.0 has no upgrade path from 0.1.0** (`D-26`), so a
+      `data/` directory from 0.1.0 is discarded and recreated, and `apps/api/src/views/` is
+      still absent because nothing stores a total.
+- [ ] **`GET /api/v1/tasks/:id/history` cannot be read for an archived task.** The route reads
+      through `services.tasks.get(id)`, which filters `archived_at IS NULL`, so history for an
+      archived task is a 404. Behaviour is identical on `HEAD`, so this is **pre-existing and
+      not a regression** — but it means "every status change is logged, newest-first" is not
+      reachable once a task is archived, which the criterion's wording implies. Either the
+      history route should read through an archive-aware lookup, or the criterion should say
+      history is for live tasks only. Cheap either way; undecided, so left alone.
+- [x] **`docker compose up` needed a `sleep` before curling** — the fix is
+      `docker compose up -d --wait --wait-timeout 60`, which blocks until the
+      health check passes. Verified working 2026-09-30 and used in place of a
+      fixed sleep. The exit-test script in `docs/RELEASES/v0.2.0.md` should use it
+      too rather than telling the owner to guess when the port is ready.
 - [x] **`pnpm test:coverage` works *and* gates.** `@vitest/coverage-v8@2.1.9` installed as a root
       devDependency on 2026-09-29, matched to the repo's Vitest major. Installed unpinned it
       pulls v5 and dies with `vitest/node does not provide an export named

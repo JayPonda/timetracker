@@ -15,7 +15,7 @@ describe('criterion 7: no API route accepts a delete of user data', () => {
     expect(() =>
       table.declare({
         method: 'DELETE',
-        url: '/api/tasks/1',
+        url: '/api/v1/tasks/1',
         capabilities: [CAPABILITIES.TASK_UPDATE],
         description: 'remove a task',
         handler: noop,
@@ -28,7 +28,7 @@ describe('criterion 7: no API route accepts a delete of user data', () => {
     try {
       table.declare({
         method: 'DELETE',
-        url: '/api/tasks/1',
+        url: '/api/v1/tasks/1',
         capabilities: [CAPABILITIES.TASK_UPDATE],
         description: 'remove a task',
         handler: noop,
@@ -42,12 +42,129 @@ describe('criterion 7: no API route accepts a delete of user data', () => {
   it('allows an archive, which is a PATCH', () => {
     const table = new RouteTable().declare({
       method: 'PATCH',
-      url: '/api/tasks/1/archive',
+      url: '/api/v1/tasks/1/archive',
       capabilities: [CAPABILITIES.TASK_UPDATE],
       description: 'archive a task',
       handler: noop,
     });
     expect(table.all()).toHaveLength(1);
+  });
+});
+
+describe('ADR 0013: a route outside the URL scheme is refused where it is declared', () => {
+  it('refuses a bare API path, which is the ambiguity the scheme removes', () => {
+    // One process serves the JSON and the HTML, so `/tasks` is a list of tasks
+    // in one namespace and a screen in the other. This is refused at the only
+    // place a route enters the app, so it cannot be forgotten under time
+    // pressure the way a review comment can.
+    const table = new RouteTable();
+
+    expect(() =>
+      table.declare({
+        method: 'GET',
+        url: '/tasks',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'list tasks',
+        handler: noop,
+      }),
+    ).toThrow(/neither under \/api\/v1/);
+  });
+
+  it('refuses the unversioned /api, because v1 is the only version served', () => {
+    const table = new RouteTable();
+
+    expect(() =>
+      table.declare({
+        method: 'GET',
+        url: '/api/tasks',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'list tasks',
+        handler: noop,
+      }),
+    ).toThrow(/neither under \/api\/v1/);
+  });
+
+  it('refuses a path that merely starts with the letters of the prefix', () => {
+    // `startsWith('/api/v1')` without the separator would admit `/api/v1beta`.
+    const table = new RouteTable();
+
+    expect(() =>
+      table.declare({
+        method: 'GET',
+        url: '/api/v1beta/tasks',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'list tasks',
+        handler: noop,
+      }),
+    ).toThrow(/neither under \/api\/v1/);
+  });
+
+  it('refuses a UI path, because pages are served by the static mount not declared', () => {
+    const table = new RouteTable();
+
+    expect(() =>
+      table.declare({
+        method: 'GET',
+        url: '/ui/v1/tasks',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'the tasks screen',
+        handler: noop,
+      }),
+    ).toThrow(/neither under \/api\/v1/);
+  });
+
+  it('does not record the refused route', () => {
+    const table = new RouteTable();
+    try {
+      table.declare({
+        method: 'GET',
+        url: '/tasks',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'list tasks',
+        handler: noop,
+      });
+    } catch {
+      // expected
+    }
+    expect(table.all()).toHaveLength(0);
+  });
+
+  it('allows the three agreed unprefixed routes', () => {
+    // The probes and the root redirect are public and answerable by something
+    // that knows nothing about this app's URL design.
+    for (const url of ['/health', '/ready', '/']) {
+      const table = new RouteTable();
+      expect(() =>
+        table.declare({
+          method: 'GET',
+          url,
+          public: true,
+          capabilities: [],
+          description: `an agreed unprefixed route: ${url}`,
+          handler: noop,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it('allows a versioned API route, including a deep one', () => {
+    const table = new RouteTable()
+      .declare({
+        method: 'GET',
+        url: '/api/v1/tasks',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'list tasks',
+        handler: noop,
+      })
+      .declare({
+        method: 'GET',
+        url: '/api/v1/tasks/:id/criteria',
+        capabilities: [CAPABILITIES.TASK_READ],
+        description: 'list criteria',
+        handler: noop,
+      });
+
+    expect(table.all()).toHaveLength(2);
   });
 });
 
@@ -57,7 +174,7 @@ describe('criterion 12: a route with no declared capability is refused', () => {
     // instead would be a worse developer experience than a 403 that says why.
     const table = new RouteTable().declare({
       method: 'GET',
-      url: '/api/tasks',
+      url: '/api/v1/tasks',
       capabilities: [],
       description: 'list tasks',
       handler: noop,
@@ -72,13 +189,13 @@ describe('criterion 12: a route with no declared capability is refused', () => {
     // write, which is what an `every` rather than a `some` guarantees.
     const table = new RouteTable().declare({
       method: 'PATCH',
-      url: '/api/tasks/1',
+      url: '/api/v1/tasks/1',
       capabilities: [CAPABILITIES.TASK_READ, CAPABILITIES.TASK_UPDATE],
       description: 'update a task',
       handler: noop,
     });
 
-    const declaration = table.get('PATCH', '/api/tasks/1');
+    const declaration = table.get('PATCH', '/api/v1/tasks/1');
     const readOnly = principalWith('mcp_token', [CAPABILITIES.TASK_READ]);
     const missing = declaration!.capabilities.filter((c) => !readOnly.capabilities.has(c));
 
@@ -128,7 +245,7 @@ describe('a route cannot be declared twice', () => {
   it('refuses a second declaration of the same method and path', () => {
     const table = new RouteTable().declare({
       method: 'GET',
-      url: '/api/tasks',
+      url: '/api/v1/tasks',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'list tasks',
       handler: noop,
@@ -137,7 +254,7 @@ describe('a route cannot be declared twice', () => {
     expect(() =>
       table.declare({
         method: 'GET',
-        url: '/api/tasks',
+        url: '/api/v1/tasks',
         capabilities: [CAPABILITIES.TASK_READ],
         description: 'list tasks again',
         handler: noop,
@@ -150,13 +267,13 @@ describe('a route cannot be declared twice', () => {
     // without normalisation the audit would miss every route.
     const table = new RouteTable().declare({
       method: 'GET',
-      url: '/api/tasks',
+      url: '/api/v1/tasks',
       capabilities: [CAPABILITIES.TASK_READ],
       description: 'list tasks',
       handler: noop,
     });
 
-    expect(table.has('get', '/api/tasks')).toBe(true);
+    expect(table.has('get', '/api/v1/tasks')).toBe(true);
   });
 });
 
@@ -184,7 +301,7 @@ describe('the static-route exemption cannot exempt an API route', () => {
 
   it('does not exempt a capability declaration that happens to name a route', () => {
     // An API route declaring its capability has no reason to name a file on disk.
-    expect(looksLikeStaticFileRoute({ url: '/api/tasks' })).toBe(false);
+    expect(looksLikeStaticFileRoute({ url: '/api/v1/tasks' })).toBe(false);
   });
 });
 

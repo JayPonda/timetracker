@@ -30,14 +30,14 @@ async function readTag(res: Response, fallback: string): Promise<Tag> {
 }
 
 export async function fetchTags(signal: AbortSignal, includeArchived: boolean): Promise<Tag[]> {
-  const path = includeArchived ? '/tags?include_archived=true' : '/tags';
+  const path = includeArchived ? '/api/v1/tags?include_archived=true' : '/api/v1/tags';
   const res = await fetch(path, { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw await apiError(res, 'Could not load tags');
   return listTagsResponseSchema.parse(await res.json()).tags;
 }
 
 export async function createTag(input: CreateTagInput): Promise<Tag> {
-  const res = await fetch('/tags', {
+  const res = await fetch('/api/v1/tags', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -46,7 +46,7 @@ export async function createTag(input: CreateTagInput): Promise<Tag> {
 }
 
 export async function updateTag(id: number, input: UpdateTagInput): Promise<Tag> {
-  const res = await fetch(`/tags/${id}`, {
+  const res = await fetch(`/api/v1/tags/${id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify(input),
@@ -55,7 +55,7 @@ export async function updateTag(id: number, input: UpdateTagInput): Promise<Tag>
 }
 
 export async function archiveTag(id: number): Promise<Tag> {
-  const res = await fetch(`/tags/${id}/archive`, {
+  const res = await fetch(`/api/v1/tags/${id}/archive`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
@@ -63,7 +63,7 @@ export async function archiveTag(id: number): Promise<Tag> {
 }
 
 export async function restoreTag(id: number): Promise<Tag> {
-  const res = await fetch(`/tags/${id}/restore`, {
+  const res = await fetch(`/api/v1/tags/${id}/restore`, {
     method: 'PATCH',
     headers: { accept: 'application/json' },
   });
