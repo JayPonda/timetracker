@@ -33,7 +33,7 @@ export function App(): JSX.Element {
         <main className="flex-1 p-6">
           <h2 className="text-lg font-medium mb-2">The foundation is running</h2>
           <p className="max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-            Projects and tasks are usable: create them, edit them, archive them,
+            Projects, tasks and tags are usable: create them, edit them, archive them,
             restore them. The application runs in Docker, keeps its data in SQLite,
             migrates its own schema, and serves this page from the same process as the
             API. The timer arrives in the release listed on the left.
