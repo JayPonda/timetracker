@@ -823,6 +823,15 @@ Things a future session should not have to rediscover. Checked and ticked when d
       and refuses naming the limit when all three are taken, because restoring
       past the trigger would fail as a constraint error instead.
 
+- [x] **2026-09-30: the criteria slice is done.** Same shape as todos, minus the
+      done flag. Two test-writing lessons from its suite: fixture text is part
+      of the assertion surface — a criterion reading “Nothing is deleted”
+      contains “delete” and fails the no-Delete check — and an assertion must
+      target what its requirement means, not its shadow: “no tick box” forbids
+      the per-criterion `Mark` control, not the Show-archived toggle that
+      happens to be a checkbox. Both were the test overreaching, not the code
+      misbehaving.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

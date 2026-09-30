@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import type { Task, Todo } from '@pdm/shared';
+import { TaskCriteria, type TaskCriteriaProps } from './TaskCriteria';
 import { TaskLinks, type TaskLinksProps } from './TaskLinks';
 
 /**
@@ -51,6 +52,7 @@ export interface TaskDetailViewProps {
   readonly busyId: number | null;
   readonly actionError: string | null;
   readonly linksProps: TaskLinksProps;
+  readonly criteriaProps: TaskCriteriaProps;
 }
 
 const inputClass =
@@ -89,6 +91,7 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
     busyId,
     actionError,
     linksProps,
+    criteriaProps,
   } = props;
 
   if (loading) return <p className="mt-4 text-sm text-neutral-500">Loading the task…</p>;
@@ -377,8 +380,12 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
         <TaskLinks {...linksProps} />
       </div>
 
+      <div className="mt-6">
+        <TaskCriteria {...criteriaProps} />
+      </div>
+
       <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">
-        Acceptance criteria and reference materials join this page later in this release.
+        Reference materials join this page later in this release.
       </p>
     </div>
   );

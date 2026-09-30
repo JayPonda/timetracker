@@ -2,27 +2,37 @@ import { useState, type JSX } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createCriterionSchema,
   createTaskLinkSchema,
   createTodoSchema,
+  updateCriterionSchema,
   updateTaskLinkSchema,
   updateTodoSchema,
+  type Criterion,
   type TaskLink,
   type Todo,
 } from '@pdm/shared';
 import { Sidebar } from '../../components/Sidebar';
 import { EMPTY_TODO_FORM, TaskDetailView, type TodoFormValues } from './TaskDetailView';
+import { EMPTY_CRITERION_FORM, type CriterionFormValues } from './TaskCriteria';
 import { EMPTY_TASK_LINK_FORM, type TaskLinkFormValues } from './TaskLinks';
 import {
+  archiveCriterion,
   archiveTodo,
   archiveTaskLink,
+  createCriterion,
   createTodo,
   createTaskLink,
+  fetchCriteria,
   fetchTask,
   fetchTaskLinks,
   fetchTodos,
+  reorderCriteria,
   reorderTodos,
+  restoreCriterion,
   restoreTodo,
   restoreTaskLink,
+  updateCriterion,
   updateTodo,
   updateTaskLink,
 } from './api';
@@ -86,6 +96,16 @@ export function TaskDetailPage(): JSX.Element {
   const [linkSavingEdit, setLinkSavingEdit] = useState(false);
   const [linkBusyId, setLinkBusyId] = useState<number | null>(null);
   const [linkActionError, setLinkActionError] = useState<string | null>(null);
+  const [showArchivedCriteria, setShowArchivedCriteria] = useState(false);
+  const [criterionAddValues, setCriterionAddValues] = useState<CriterionFormValues>(EMPTY_CRITERION_FORM);
+  const [criterionAddError, setCriterionAddError] = useState<string | null>(null);
+  const [criterionAdding, setCriterionAdding] = useState(false);
+  const [criterionEditingId, setCriterionEditingId] = useState<number | null>(null);
+  const [criterionEditValues, setCriterionEditValues] = useState<CriterionFormValues>(EMPTY_CRITERION_FORM);
+  const [criterionEditError, setCriterionEditError] = useState<string | null>(null);
+  const [criterionSavingEdit, setCriterionSavingEdit] = useState(false);
+  const [criterionBusyId, setCriterionBusyId] = useState<number | null>(null);
+  const [criterionActionError, setCriterionActionError] = useState<string | null>(null);
 
   const taskQuery = useQuery({
     queryKey: ['task', taskId],
@@ -104,9 +124,16 @@ export function TaskDetailPage(): JSX.Element {
     enabled: taskIdValid,
   });
 
+  const criteriaQuery = useQuery({
+    queryKey: ['criteria', taskId, showArchivedCriteria],
+    queryFn: ({ signal }) => fetchCriteria(signal, taskId, showArchivedCriteria),
+    enabled: taskIdValid,
+  });
+
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['todos', taskId] });
     await queryClient.invalidateQueries({ queryKey: ['links', taskId] });
+    await queryClient.invalidateQueries({ queryKey: ['criteria', taskId] });
   };
 
   const handleAdd = async (): Promise<void> => {
@@ -273,6 +300,101 @@ export function TaskDetailPage(): JSX.Element {
     }
   };
 
+  const handleCriterionAdd = async (): Promise<void> => {
+    if (!taskIdValid) return;
+    const parsed = createCriterionSchema.safeParse(criterionAddValues);
+    if (!parsed.success) {
+      setCriterionAddError(firstIssueMessage(toIssues(parsed.error)));
+      return;
+    }
+
+    setCriterionAdding(true);
+    setCriterionAddError(null);
+    try {
+      await createCriterion(taskId, parsed.data);
+      setCriterionAddValues(EMPTY_CRITERION_FORM);
+      await refresh();
+    } catch (error) {
+      setCriterionAddError(errorMessage(error, 'Could not add the criterion.'));
+    } finally {
+      setCriterionAdding(false);
+    }
+  };
+
+  const handleCriterionStartEdit = (criterion: Criterion): void => {
+    setCriterionEditingId(criterion.id);
+    setCriterionEditValues({ text: criterion.text });
+    setCriterionEditError(null);
+    setCriterionActionError(null);
+  };
+
+  const handleCriterionSaveEdit = async (): Promise<void> => {
+    if (criterionEditingId === null) return;
+    const original = criteriaQuery.data?.find((criterion) => criterion.id === criterionEditingId);
+    if (!original) {
+      setCriterionEditError('That criterion is no longer in this list. Reload and try again.');
+      return;
+    }
+    if (criterionEditValues.text === original.text) {
+      setCriterionEditError('Nothing to update: change the statement before saving.');
+      return;
+    }
+
+    const parsed = updateCriterionSchema.safeParse(criterionEditValues);
+    if (!parsed.success) {
+      setCriterionEditError(firstIssueMessage(toIssues(parsed.error)));
+      return;
+    }
+
+    setCriterionSavingEdit(true);
+    setCriterionEditError(null);
+    try {
+      await updateCriterion(criterionEditingId, parsed.data);
+      setCriterionEditingId(null);
+      await refresh();
+    } catch (error) {
+      setCriterionEditError(errorMessage(error, 'Could not update the criterion.'));
+    } finally {
+      setCriterionSavingEdit(false);
+    }
+  };
+
+  const handleCriterionMove = async (criterionId: number, direction: -1 | 1): Promise<void> => {
+    if (!taskIdValid) return;
+    const order = (criteriaQuery.data ?? []).map((criterion) => criterion.id);
+    const index = order.indexOf(criterionId);
+    const swapWith = index + direction;
+    if (index === -1 || swapWith < 0 || swapWith >= order.length) return;
+    const next = [...order];
+    [next[index], next[swapWith]] = [next[swapWith] as number, next[index] as number];
+    setCriterionBusyId(criterionId);
+    setCriterionActionError(null);
+    try {
+      await reorderCriteria(taskId, next as number[]);
+      await refresh();
+    } catch (error) {
+      setCriterionActionError(errorMessage(error, 'Could not reorder the criteria.'));
+    } finally {
+      setCriterionBusyId(null);
+    }
+  };
+
+  const runCriterionAction = async (
+    criterionId: number,
+    action: (id: number) => Promise<unknown>,
+  ): Promise<void> => {
+    setCriterionBusyId(criterionId);
+    setCriterionActionError(null);
+    try {
+      await action(criterionId);
+      await refresh();
+    } catch (error) {
+      setCriterionActionError(errorMessage(error, 'That change did not go through.'));
+    } finally {
+      setCriterionBusyId(null);
+    }
+  };
+
   const handleTick = (todo: Todo): Promise<void> =>
     runAction(todo.id, (todoId) => updateTodo(todoId, { done: !todo.done }));
 
@@ -373,6 +495,36 @@ export function TaskDetailPage(): JSX.Element {
                 onRestore: (linkId) => void runLinkAction(linkId, restoreTaskLink),
                 busyId: linkBusyId,
                 actionError: linkActionError,
+              }}
+              criteriaProps={{
+                criteria: criteriaQuery.data,
+                loading: criteriaQuery.isPending,
+                loadError: criteriaQuery.error
+                  ? errorMessage(criteriaQuery.error, 'Could not load acceptance criteria.')
+                  : null,
+                showArchived: showArchivedCriteria,
+                onToggleShowArchived: setShowArchivedCriteria,
+                addValues: criterionAddValues,
+                onAddChange: setCriterionAddValues,
+                onAdd: () => void handleCriterionAdd(),
+                addError: criterionAddError,
+                adding: criterionAdding,
+                editingId: criterionEditingId,
+                editValues: criterionEditValues,
+                onEditChange: setCriterionEditValues,
+                onStartEdit: handleCriterionStartEdit,
+                onCancelEdit: () => {
+                  setCriterionEditingId(null);
+                  setCriterionEditError(null);
+                },
+                onSaveEdit: () => void handleCriterionSaveEdit(),
+                editError: criterionEditError,
+                savingEdit: criterionSavingEdit,
+                onMove: (criterionId, direction) => void handleCriterionMove(criterionId, direction),
+                onArchive: (criterionId) => void runCriterionAction(criterionId, archiveCriterion),
+                onRestore: (criterionId) => void runCriterionAction(criterionId, restoreCriterion),
+                busyId: criterionBusyId,
+                actionError: criterionActionError,
               }}
             />
           )}

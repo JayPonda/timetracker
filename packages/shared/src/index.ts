@@ -1,5 +1,6 @@
 export * from './capabilities.js';
 export * from './clock.js';
+export * from './criteria.js';
 export * from './http.js';
 export * from './projects.js';
 export * from './task-links.js';

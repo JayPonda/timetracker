@@ -32,8 +32,13 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
   links per task through declared routes and the detail page's links section.
   The 4th is refused with a message naming the limit of 3, then by the trigger
   for any writer that never calls the service. URLs must parse as absolute;
-  positions are service-assigned slots freed by archiving. Criteria, references
-  and tags are still unbuilt, so the release exit test remains blocked.
+  positions are service-assigned slots freed by archiving.
+- **Acceptance criteria are usable end to end.** Add, edit, reorder, archive and
+  restore the definition of done through declared routes and the detail page's
+  criteria section, kept visibly separate from todos: no tick box anywhere near
+  a condition. Whether a criterion was met is decided at closure in 0.5.0, never
+  here; archiving removes one from later closures without touching past records.
+  References and tags are still unbuilt, so the release exit test remains blocked.
 
 ### Removed
 

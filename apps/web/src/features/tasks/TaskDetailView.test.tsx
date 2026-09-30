@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Task, Todo } from '@pdm/shared';
 import { EMPTY_TODO_FORM, TaskDetailView, type TaskDetailViewProps } from './TaskDetailView';
+import { EMPTY_CRITERION_FORM } from './TaskCriteria';
 import { EMPTY_TASK_LINK_FORM } from './TaskLinks';
 
 const TASK: Task = {
@@ -101,6 +102,31 @@ function view(overrides: Partial<TaskDetailViewProps> = {}): string {
       onSaveEdit: () => {},
       editError: null,
       savingEdit: false,
+      onArchive: () => {},
+      onRestore: () => {},
+      busyId: null,
+      actionError: null,
+    },
+    criteriaProps: {
+      criteria: [],
+      loading: false,
+      loadError: null,
+      showArchived: false,
+      onToggleShowArchived: () => {},
+      addValues: EMPTY_CRITERION_FORM,
+      onAddChange: () => {},
+      onAdd: () => {},
+      addError: null,
+      adding: false,
+      editingId: null,
+      editValues: EMPTY_CRITERION_FORM,
+      onEditChange: () => {},
+      onStartEdit: () => {},
+      onCancelEdit: () => {},
+      onSaveEdit: () => {},
+      editError: null,
+      savingEdit: false,
+      onMove: () => {},
       onArchive: () => {},
       onRestore: () => {},
       busyId: null,

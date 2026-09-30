@@ -1,5 +1,7 @@
 import {
+  criterionResponseSchema,
   errorEnvelopeSchema,
+  listCriteriaResponseSchema,
   listProjectsResponseSchema,
   listTaskLinksResponseSchema,
   listTasksResponseSchema,
@@ -7,14 +9,17 @@ import {
   taskLinkResponseSchema,
   taskResponseSchema,
   todoResponseSchema,
+  type CreateCriterionInput,
   type CreateTaskInput,
   type CreateTaskLinkInput,
   type CreateTodoInput,
+  type Criterion,
   type ListTasksQuery,
   type Project,
   type Task,
   type TaskLink,
   type Todo,
+  type UpdateCriterionInput,
   type UpdateTaskInput,
   type UpdateTaskLinkInput,
   type UpdateTodoInput,
@@ -221,4 +226,66 @@ export async function restoreTaskLink(id: number): Promise<TaskLink> {
     headers: { accept: 'application/json' },
   });
   return readTaskLink(res, 'Could not restore the link');
+}
+
+export async function fetchCriteria(
+  signal: AbortSignal,
+  taskId: number,
+  includeArchived: boolean,
+): Promise<Criterion[]> {
+  const path = includeArchived
+    ? `/tasks/${taskId}/criteria?include_archived=true`
+    : `/tasks/${taskId}/criteria`;
+  const res = await fetch(path, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw await apiError(res, 'Could not load acceptance criteria');
+  return listCriteriaResponseSchema.parse(await res.json()).criteria;
+}
+
+async function readCriterion(res: Response, fallback: string): Promise<Criterion> {
+  if (!res.ok) throw await apiError(res, fallback);
+  return criterionResponseSchema.parse(await res.json()).criterion;
+}
+
+export async function createCriterion(taskId: number, input: CreateCriterionInput): Promise<Criterion> {
+  const res = await fetch(`/tasks/${taskId}/criteria`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readCriterion(res, 'Could not add the criterion');
+}
+
+export async function updateCriterion(id: number, input: UpdateCriterionInput): Promise<Criterion> {
+  const res = await fetch(`/criteria/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readCriterion(res, 'Could not update the criterion');
+}
+
+export async function reorderCriteria(taskId: number, order: readonly number[]): Promise<Criterion[]> {
+  const res = await fetch(`/tasks/${taskId}/criteria/reorder`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ order }),
+  });
+  if (!res.ok) throw await apiError(res, 'Could not reorder the criteria');
+  return listCriteriaResponseSchema.parse(await res.json()).criteria;
+}
+
+export async function archiveCriterion(id: number): Promise<Criterion> {
+  const res = await fetch(`/criteria/${id}/archive`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readCriterion(res, 'Could not archive the criterion');
+}
+
+export async function restoreCriterion(id: number): Promise<Criterion> {
+  const res = await fetch(`/criteria/${id}/restore`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readCriterion(res, 'Could not restore the criterion');
 }
