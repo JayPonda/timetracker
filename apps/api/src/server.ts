@@ -15,10 +15,12 @@ import { createActivityLogService } from './services/activity-log.service.js';
 import { createProjectService } from './services/project.service.js';
 import { createTaskService } from './services/task.service.js';
 import { createTodoService } from './services/todo.service.js';
+import { createTaskLinkService } from './services/task-link.service.js';
 import { healthRoute } from './routes/health.js';
 import { projectRoutes } from './routes/projects.js';
 import { taskRoutes } from './routes/tasks.js';
 import { todoRoutes } from './routes/todos.js';
+import { taskLinkRoutes } from './routes/task-links.js';
 import { registerRoutes, RouteTable, type RouteDeclaration } from './routes/table.js';
 
 export interface CreateServerOptions {
@@ -97,6 +99,7 @@ export function createServer({
     projects: createProjectService(knex, activityLog),
     tasks: createTaskService(knex, activityLog),
     todos: createTodoService(knex, activityLog),
+    taskLinks: createTaskLinkService(knex, activityLog),
   });
   registerRoutes(app, buildRouteTable({ db, config, startedAtMs, extraRoutes }), {
     principalResolver,
@@ -126,7 +129,7 @@ function buildRouteTable(options: {
 }): RouteTable {
   // Each domain contributes its declarations here, so the table keeps one source
   // for production routes and the audit keeps one object to compare against.
-  const base = [...projectRoutes(), ...taskRoutes(), ...todoRoutes()].reduce<RouteTable>(
+  const base = [...projectRoutes(), ...taskRoutes(), ...todoRoutes(), ...taskLinkRoutes()].reduce<RouteTable>(
     (table, declaration) => table.declare(declaration),
     new RouteTable().declare(healthRoute(options)),
   );

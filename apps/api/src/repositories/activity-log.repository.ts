@@ -13,6 +13,7 @@ import type { Knex } from 'knex';
 export type ActivityEntity =
   | 'project'
   | 'task'
+  | 'task_link'
   | 'todo'
   | 'acceptance_criterion'
   | 'closure_record'

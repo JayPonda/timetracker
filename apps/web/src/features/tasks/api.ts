@@ -1,17 +1,22 @@
 import {
   errorEnvelopeSchema,
   listProjectsResponseSchema,
+  listTaskLinksResponseSchema,
   listTasksResponseSchema,
   listTodosResponseSchema,
+  taskLinkResponseSchema,
   taskResponseSchema,
   todoResponseSchema,
   type CreateTaskInput,
+  type CreateTaskLinkInput,
   type CreateTodoInput,
   type ListTasksQuery,
   type Project,
   type Task,
+  type TaskLink,
   type Todo,
   type UpdateTaskInput,
+  type UpdateTaskLinkInput,
   type UpdateTodoInput,
 } from '@pdm/shared';
 
@@ -168,4 +173,52 @@ export async function restoreTodo(id: number): Promise<Todo> {
     headers: { accept: 'application/json' },
   });
   return readTodo(res, 'Could not restore the todo');
+}
+
+export async function fetchTaskLinks(signal: AbortSignal, taskId: number): Promise<TaskLink[]> {
+  const res = await fetch(`/tasks/${taskId}/links`, {
+    signal,
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw await apiError(res, 'Could not load links');
+  return listTaskLinksResponseSchema.parse(await res.json()).links;
+}
+
+async function readTaskLink(res: Response, fallback: string): Promise<TaskLink> {
+  if (!res.ok) throw await apiError(res, fallback);
+  return taskLinkResponseSchema.parse(await res.json()).link;
+}
+
+export async function createTaskLink(taskId: number, input: CreateTaskLinkInput): Promise<TaskLink> {
+  const res = await fetch(`/tasks/${taskId}/links`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readTaskLink(res, 'Could not add the link');
+}
+
+export async function updateTaskLink(id: number, input: UpdateTaskLinkInput): Promise<TaskLink> {
+  const res = await fetch(`/task-links/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readTaskLink(res, 'Could not update the link');
+}
+
+export async function archiveTaskLink(id: number): Promise<TaskLink> {
+  const res = await fetch(`/task-links/${id}/archive`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readTaskLink(res, 'Could not archive the link');
+}
+
+export async function restoreTaskLink(id: number): Promise<TaskLink> {
+  const res = await fetch(`/task-links/${id}/restore`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readTaskLink(res, 'Could not restore the link');
 }

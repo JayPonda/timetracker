@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import type { Task, Todo } from '@pdm/shared';
+import { TaskLinks, type TaskLinksProps } from './TaskLinks';
 
 /**
  * The task detail screen, split from its data like every other screen: what
@@ -49,6 +50,7 @@ export interface TaskDetailViewProps {
   readonly onRestore: (id: number) => void;
   readonly busyId: number | null;
   readonly actionError: string | null;
+  readonly linksProps: TaskLinksProps;
 }
 
 const inputClass =
@@ -86,6 +88,7 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
     onRestore,
     busyId,
     actionError,
+    linksProps,
   } = props;
 
   if (loading) return <p className="mt-4 text-sm text-neutral-500">Loading the task…</p>;
@@ -370,8 +373,12 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
         </ol>
       </section>
 
+      <div className="mt-6">
+        <TaskLinks {...linksProps} />
+      </div>
+
       <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">
-        Links, acceptance criteria and reference materials join this page later in this release.
+        Acceptance criteria and reference materials join this page later in this release.
       </p>
     </div>
   );

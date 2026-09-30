@@ -3,6 +3,7 @@ import type { ActivityLogService } from '../services/activity-log.service.js';
 import type { ProjectService } from '../services/project.service.js';
 import type { TaskService } from '../services/task.service.js';
 import type { TodoService } from '../services/todo.service.js';
+import type { TaskLinkService } from '../services/task-link.service.js';
 
 /**
  * The services, built once and reached through a Fastify decorator.
@@ -18,6 +19,7 @@ export interface Services {
   readonly projects: ProjectService;
   readonly tasks: TaskService;
   readonly todos: TodoService;
+  readonly taskLinks: TaskLinkService;
 }
 
 declare module 'fastify' {

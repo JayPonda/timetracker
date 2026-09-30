@@ -27,9 +27,13 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
   gives every task an address (`/tasks/:id`). `done_at` follows the flag from
   the server clock; the client never supplies it. Reorder takes the complete
   order and refuses a partial or foreign one rather than dropping a phase
-  silently; restore appends at the end so live positions stay unique. Links,
-  criteria, references and tags are still unbuilt, so the release exit test
-  remains blocked.
+  silently; restore appends at the end so live positions stay unique.
+- **Task links are usable end to end.** Add, edit, archive and restore up to 3
+  links per task through declared routes and the detail page's links section.
+  The 4th is refused with a message naming the limit of 3, then by the trigger
+  for any writer that never calls the service. URLs must parse as absolute;
+  positions are service-assigned slots freed by archiving. Criteria, references
+  and tags are still unbuilt, so the release exit test remains blocked.
 
 ### Removed
 

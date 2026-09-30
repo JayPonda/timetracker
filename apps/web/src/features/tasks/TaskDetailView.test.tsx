@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Task, Todo } from '@pdm/shared';
 import { EMPTY_TODO_FORM, TaskDetailView, type TaskDetailViewProps } from './TaskDetailView';
+import { EMPTY_TASK_LINK_FORM } from './TaskLinks';
 
 const TASK: Task = {
   id: 7,
@@ -83,6 +84,28 @@ function view(overrides: Partial<TaskDetailViewProps> = {}): string {
     onRestore: () => {},
     busyId: null,
     actionError: null,
+    linksProps: {
+      links: [],
+      loading: false,
+      loadError: null,
+      addValues: EMPTY_TASK_LINK_FORM,
+      onAddChange: () => {},
+      onAdd: () => {},
+      addError: null,
+      adding: false,
+      editingId: null,
+      editValues: EMPTY_TASK_LINK_FORM,
+      onEditChange: () => {},
+      onStartEdit: () => {},
+      onCancelEdit: () => {},
+      onSaveEdit: () => {},
+      editError: null,
+      savingEdit: false,
+      onArchive: () => {},
+      onRestore: () => {},
+      busyId: null,
+      actionError: null,
+    },
     ...overrides,
   };
   return renderToStaticMarkup(<TaskDetailView {...props} />);

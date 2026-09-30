@@ -816,6 +816,13 @@ Things a future session should not have to rediscover. Checked and ticked when d
       only in the full suite — which is how a green targeted run hid it until
       the gates ran.
 
+- [x] **2026-09-30: the links slice is done, and criterion 1 with it.** The slot
+      detail that earned its test: archiving link 1 of 3 then adding a link must
+      reuse slot 1, not take slot 4 past the unique index — positions are
+      smallest-free, never count-plus-one. Restore keeps its old slot when free
+      and refuses naming the limit when all three are taken, because restoring
+      past the trigger would fail as a constraint error instead.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

@@ -1,17 +1,30 @@
 import { useState, type JSX } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createTodoSchema, updateTodoSchema, type Todo } from '@pdm/shared';
+import {
+  createTaskLinkSchema,
+  createTodoSchema,
+  updateTaskLinkSchema,
+  updateTodoSchema,
+  type TaskLink,
+  type Todo,
+} from '@pdm/shared';
 import { Sidebar } from '../../components/Sidebar';
 import { EMPTY_TODO_FORM, TaskDetailView, type TodoFormValues } from './TaskDetailView';
+import { EMPTY_TASK_LINK_FORM, type TaskLinkFormValues } from './TaskLinks';
 import {
   archiveTodo,
+  archiveTaskLink,
   createTodo,
+  createTaskLink,
   fetchTask,
+  fetchTaskLinks,
   fetchTodos,
   reorderTodos,
   restoreTodo,
+  restoreTaskLink,
   updateTodo,
+  updateTaskLink,
 } from './api';
 
 /**
@@ -64,6 +77,15 @@ export function TaskDetailPage(): JSX.Element {
   const [savingEdit, setSavingEdit] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [linkAddValues, setLinkAddValues] = useState<TaskLinkFormValues>(EMPTY_TASK_LINK_FORM);
+  const [linkAddError, setLinkAddError] = useState<string | null>(null);
+  const [linkAdding, setLinkAdding] = useState(false);
+  const [linkEditingId, setLinkEditingId] = useState<number | null>(null);
+  const [linkEditValues, setLinkEditValues] = useState<TaskLinkFormValues>(EMPTY_TASK_LINK_FORM);
+  const [linkEditError, setLinkEditError] = useState<string | null>(null);
+  const [linkSavingEdit, setLinkSavingEdit] = useState(false);
+  const [linkBusyId, setLinkBusyId] = useState<number | null>(null);
+  const [linkActionError, setLinkActionError] = useState<string | null>(null);
 
   const taskQuery = useQuery({
     queryKey: ['task', taskId],
@@ -76,8 +98,15 @@ export function TaskDetailPage(): JSX.Element {
     enabled: taskIdValid,
   });
 
+  const linksQuery = useQuery({
+    queryKey: ['links', taskId],
+    queryFn: ({ signal }) => fetchTaskLinks(signal, taskId),
+    enabled: taskIdValid,
+  });
+
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['todos', taskId] });
+    await queryClient.invalidateQueries({ queryKey: ['links', taskId] });
   };
 
   const handleAdd = async (): Promise<void> => {
@@ -168,6 +197,82 @@ export function TaskDetailPage(): JSX.Element {
     }
   };
 
+  const handleLinkAdd = async (): Promise<void> => {
+    if (!taskIdValid) return;
+    const parsed = createTaskLinkSchema.safeParse(linkAddValues);
+    if (!parsed.success) {
+      setLinkAddError(firstIssueMessage(toIssues(parsed.error)));
+      return;
+    }
+
+    setLinkAdding(true);
+    setLinkAddError(null);
+    try {
+      await createTaskLink(taskId, parsed.data);
+      setLinkAddValues(EMPTY_TASK_LINK_FORM);
+      await refresh();
+    } catch (error) {
+      setLinkAddError(errorMessage(error, 'Could not add the link.'));
+    } finally {
+      setLinkAdding(false);
+    }
+  };
+
+  const handleLinkStartEdit = (link: TaskLink): void => {
+    setLinkEditingId(link.id);
+    setLinkEditValues({ label: link.label, url: link.url });
+    setLinkEditError(null);
+    setLinkActionError(null);
+  };
+
+  const handleLinkSaveEdit = async (): Promise<void> => {
+    if (linkEditingId === null) return;
+    const original = linksQuery.data?.find((link) => link.id === linkEditingId);
+    if (!original) {
+      setLinkEditError('That link is no longer in this list. Reload and try again.');
+      return;
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (linkEditValues.label !== original.label) patch.label = linkEditValues.label;
+    if (linkEditValues.url !== original.url) patch.url = linkEditValues.url;
+    if (Object.keys(patch).length === 0) {
+      setLinkEditError('Nothing to update: change a field before saving.');
+      return;
+    }
+
+    const parsed = updateTaskLinkSchema.safeParse(patch);
+    if (!parsed.success) {
+      setLinkEditError(firstIssueMessage(toIssues(parsed.error)));
+      return;
+    }
+
+    setLinkSavingEdit(true);
+    setLinkEditError(null);
+    try {
+      await updateTaskLink(linkEditingId, parsed.data);
+      setLinkEditingId(null);
+      await refresh();
+    } catch (error) {
+      setLinkEditError(errorMessage(error, 'Could not update the link.'));
+    } finally {
+      setLinkSavingEdit(false);
+    }
+  };
+
+  const runLinkAction = async (linkId: number, action: (id: number) => Promise<unknown>): Promise<void> => {
+    setLinkBusyId(linkId);
+    setLinkActionError(null);
+    try {
+      await action(linkId);
+      await refresh();
+    } catch (error) {
+      setLinkActionError(errorMessage(error, 'That change did not go through.'));
+    } finally {
+      setLinkBusyId(null);
+    }
+  };
+
   const handleTick = (todo: Todo): Promise<void> =>
     runAction(todo.id, (todoId) => updateTodo(todoId, { done: !todo.done }));
 
@@ -242,6 +347,33 @@ export function TaskDetailPage(): JSX.Element {
               onRestore={(todoId) => void runAction(todoId, restoreTodo)}
               busyId={busyId}
               actionError={actionError}
+              linksProps={{
+                links: linksQuery.data,
+                loading: linksQuery.isPending,
+                loadError: linksQuery.error
+                  ? errorMessage(linksQuery.error, 'Could not load links.')
+                  : null,
+                addValues: linkAddValues,
+                onAddChange: setLinkAddValues,
+                onAdd: () => void handleLinkAdd(),
+                addError: linkAddError,
+                adding: linkAdding,
+                editingId: linkEditingId,
+                editValues: linkEditValues,
+                onEditChange: setLinkEditValues,
+                onStartEdit: handleLinkStartEdit,
+                onCancelEdit: () => {
+                  setLinkEditingId(null);
+                  setLinkEditError(null);
+                },
+                onSaveEdit: () => void handleLinkSaveEdit(),
+                editError: linkEditError,
+                savingEdit: linkSavingEdit,
+                onArchive: (linkId) => void runLinkAction(linkId, archiveTaskLink),
+                onRestore: (linkId) => void runLinkAction(linkId, restoreTaskLink),
+                busyId: linkBusyId,
+                actionError: linkActionError,
+              }}
             />
           )}
         </main>
