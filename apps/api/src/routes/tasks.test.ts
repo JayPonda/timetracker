@@ -4,6 +4,7 @@ import {
   ERROR_CODES,
   LOCAL_USER_CAPABILITIES,
   MCP_MAX_CAPABILITIES,
+  listHistoryResponseSchema,
   taskSchema,
   type ErrorEnvelope,
 } from '@pdm/shared';
@@ -166,6 +167,47 @@ describe('path and missing tasks are answered precisely', () => {
     const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
 
     const res = await app.inject({ method: 'GET', url: '/tasks/999' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
+  });
+});
+
+describe('FR-STAT-05: GET /tasks/:id/history shows both status changes', () => {
+  it('lists newest first with before and after values', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const created = taskSchema.parse(
+      (await app.inject({ method: 'POST', url: '/tasks', payload: { name: 'A' } })).json<{
+        task: unknown;
+      }>().task,
+    );
+    await app.inject({
+      method: 'PATCH',
+      url: `/tasks/${created.id}`,
+      payload: { status: 'in_progress' },
+    });
+    await app.inject({ method: 'PATCH', url: `/tasks/${created.id}`, payload: { status: 'open' } });
+
+    const res = await app.inject({ method: 'GET', url: `/tasks/${created.id}/history` });
+
+    expect(res.statusCode).toBe(200);
+    const history = listHistoryResponseSchema.parse(res.json()).history;
+    const updates = history.filter((entry) => entry.action === 'updated');
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toMatchObject({
+      before: { status: 'in_progress' },
+      after: { status: 'open' },
+    });
+    expect(updates[1]).toMatchObject({
+      before: { status: 'open' },
+      after: { status: 'in_progress' },
+    });
+  });
+
+  it('answers 404 for a task that does not exist', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/tasks/999/history' });
 
     expect(res.statusCode).toBe(404);
     expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);

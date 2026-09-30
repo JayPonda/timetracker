@@ -845,6 +845,22 @@ Things a future session should not have to rediscover. Checked and ticked when d
       recorded in the release spec: exit-test step 5's “apply one to a task's
       tags” needs time entries, which nothing writes until 0.3.0.
 
+- [x] **2026-09-30: driving the live container found two production-only bugs,
+      and both were invisible for the same reason.** No test builds a server the
+      way production does — with a web build present and no principal resolver —
+      so (1) every API route 403'd because no resolver was ever installed, and
+      (2) the SPA fallback answered DELETE with 200 and HTML. Both are fixed
+      with regression tests that fail with the fix reverted, and the exit test
+      was driven against the live container end to end (steps 1–4, 6–10; step
+      5's apply-half waits for 0.3.0). **The lesson: a test suite in which every
+      test installs its own wiring proves nothing about the wiring production
+      uses.** At least one test must build the app exactly as boot does.
+- [x] **Exit step 8 needed a history route that did not exist.** History was
+      written on every change and visible nowhere, so `GET /tasks/:id/history`
+      now reads it back and the detail page renders it. The gap survived
+      because the criterion said “records” and the exit test said “open” — the
+      write half was done and the read half was never scoped.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

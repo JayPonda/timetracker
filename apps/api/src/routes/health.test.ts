@@ -197,6 +197,18 @@ describe('DEP-11: the app serves the built frontend from the same process', () =
     expect(res.body).toContain('PDM');
   });
 
+  it('answers a DELETE with 404 rather than the SPA fallback', async () => {
+    // In production a web build exists, so the fallback once answered DELETE
+    // /projects/1 with 200 and index.html — a client told its deletion
+    // succeeded while nothing was deleted. The fallback serves pages, and
+    // pages are fetched with GET.
+    const { app: server } = await appWithWeb();
+    const res = await server.inject({ method: 'DELETE', url: '/projects/1' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<{ error: { code: string } }>().error.code).toBe('not_found');
+  });
+
   it('returns 404 for a missing asset instead of masking it as index.html', async () => {
     // Answering a script request with HTML gives a MIME-type error in the
     // browser that says nothing about the real cause.

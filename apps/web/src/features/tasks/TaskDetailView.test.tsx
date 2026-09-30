@@ -155,6 +155,20 @@ function view(overrides: Partial<TaskDetailViewProps> = {}): string {
       busyId: null,
       actionError: null,
     },
+    history: [
+      {
+        uid: '0195b3b1-8f2a-7a1b-9c9c-8c0f0f0f0f0f',
+        entity: 'task',
+        entity_id: 7,
+        action: 'updated',
+        before: { status: 'open' },
+        after: { status: 'in_progress' },
+        at: 1_700_000_003_600,
+      },
+    ],
+    historyLoading: false,
+    historyError: null,
+    timeZone: 'Asia/Kolkata',
     ...overrides,
   };
   return renderToStaticMarkup(<TaskDetailView {...props} />);
@@ -191,5 +205,17 @@ describe('the header names the task and its project', () => {
     expect(html).toContain('Write the spec');
     expect(html).toContain('Client work');
     expect(html).toContain('In progress');
+  });
+});
+
+describe('FR-STAT-05: the history reads as lines, not diffs', () => {
+  it('words the action and the changed field with before and after', () => {
+    const html = view();
+
+    expect(html).toContain('History');
+    expect(html).toContain('Updated');
+    expect(html).toContain('status');
+    expect(html).toContain('open');
+    expect(html).toContain('in_progress');
   });
 });

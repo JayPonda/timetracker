@@ -17,6 +17,7 @@ import {
   type Todo,
 } from '@pdm/shared';
 import { Sidebar } from '../../components/Sidebar';
+import { useHealth } from '../../lib/health';
 import { EMPTY_TODO_FORM, TaskDetailView, type TodoFormValues } from './TaskDetailView';
 import { EMPTY_CRITERION_FORM, type CriterionFormValues } from './TaskCriteria';
 import { EMPTY_REFERENCE_FORM, type ReferenceFormValues } from './TaskReferences';
@@ -31,6 +32,7 @@ import {
   createTodo,
   createTaskLink,
   fetchCriteria,
+  fetchHistory,
   fetchReferences,
   fetchTask,
   fetchTaskLinks,
@@ -148,6 +150,12 @@ export function TaskDetailPage(): JSX.Element {
     queryFn: ({ signal }) => fetchCriteria(signal, taskId, showArchivedCriteria),
     enabled: taskIdValid,
   });
+  const historyQuery = useQuery({
+    queryKey: ['history', taskId],
+    queryFn: ({ signal }) => fetchHistory(signal, taskId),
+    enabled: taskIdValid,
+  });
+  const { data: health } = useHealth();
 
   const referencesQuery = useQuery({
     queryKey: ['references', taskId],
@@ -160,6 +168,7 @@ export function TaskDetailPage(): JSX.Element {
     await queryClient.invalidateQueries({ queryKey: ['links', taskId] });
     await queryClient.invalidateQueries({ queryKey: ['criteria', taskId] });
     await queryClient.invalidateQueries({ queryKey: ['references', taskId] });
+    await queryClient.invalidateQueries({ queryKey: ['history', taskId] });
   };
 
   const handleAdd = async (): Promise<void> => {
@@ -674,6 +683,12 @@ export function TaskDetailPage(): JSX.Element {
                 busyId: referenceBusyId,
                 actionError: referenceActionError,
               }}
+              history={historyQuery.data}
+              historyLoading={historyQuery.isPending}
+              historyError={
+                historyQuery.error ? errorMessage(historyQuery.error, 'Could not load history.') : null
+              }
+              timeZone={health?.time_zone}
             />
           )}
         </main>

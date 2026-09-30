@@ -46,6 +46,26 @@ function parseOrThrow<Output, Input>(
   throw validationFailed(validationMessage(details), details);
 }
 
+/**
+ * A history side back into an object.
+ *
+ * The service wrote valid JSON, so a failure here means a corrupt row rather
+ * than a client mistake — and a corrupt row must not 500 the whole history.
+ * `null` says “unreadable” where an object would say “unchanged”.
+ */
+function parseSide(json: string | null): Record<string, unknown> | null {
+  if (json === null) return null;
+  try {
+    const value: unknown = JSON.parse(json);
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function taskRoutes(): readonly RouteDeclaration[] {
   return [
     {
@@ -98,6 +118,30 @@ export function taskRoutes(): readonly RouteDeclaration[] {
         const input = parseOrThrow(updateTaskSchema, req.body ?? {});
         const task = await req.server.services.tasks.update(id, input);
         return reply.status(200).send({ task });
+      },
+    },
+    {
+      method: 'GET',
+      url: `${ID_PARAM}/history`,
+      capabilities: [CAPABILITIES.TASK_READ],
+      description: 'Read a task’s history, newest first (FR-STAT-05)',
+      handler: async (req, reply) => {
+        const id = parseId((req.params as Record<string, string>).id);
+        // Read through the task first: history of a task the caller may not
+        // see is 404, for the same reason the task itself is.
+        await req.server.services.tasks.get(id);
+        const rows = await req.server.services.activityLog.listForEntity('task', id);
+        return reply.status(200).send({
+          history: rows.map((row) => ({
+            uid: row.uid,
+            entity: row.entity,
+            entity_id: row.entity_id,
+            action: row.action,
+            before: parseSide(row.before_json),
+            after: parseSide(row.after_json),
+            at: row.at,
+          })),
+        });
       },
     },
     {

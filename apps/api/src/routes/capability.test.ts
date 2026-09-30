@@ -94,6 +94,27 @@ describe('criterion 12: a principal without the capability is refused with 403',
   });
 });
 
+describe('production resolves the local user when no resolver is installed', () => {
+  it('serves reads and writes instead of refusing everything with 403', async () => {
+    // Production passes no resolver, so this is production's shape. Before the
+    // default was installed in createServer, every guarded route refused with
+    // 403 — the interface loaded and could do nothing — while every test, each
+    // installing its own resolver, stayed green.
+    harness = await createTestApp();
+
+    expect((await harness.app.inject({ method: 'GET', url: '/projects' })).statusCode).toBe(200);
+    expect(
+      (
+        await harness.app.inject({
+          method: 'POST',
+          url: '/projects',
+          payload: { name: 'Production project' },
+        })
+      ).statusCode,
+    ).toBe(201);
+  });
+});
+
 describe('criterion 12: a principal holding the capability is allowed', () => {
   it('reaches the handler', async () => {
     const { app } = await appHolding({

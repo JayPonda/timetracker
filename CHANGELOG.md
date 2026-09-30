@@ -10,7 +10,30 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
 
 ## [Unreleased]
 
+### Fixed
+
+- **Production resolved no principal, so the whole API refused with 403.**
+  `createServer` installed a principal resolver only when the caller passed one,
+  and production passes none — every guarded route answered 403 while the
+  interface loaded and could do nothing. Every test installed its own resolver
+  and stayed green, which is why nothing caught it until a live container was
+  driven for the exit test. `createServer` now installs the local-user default
+  when none is given, and a test builds a resolver-less server (production's
+  shape) and proves reads and writes go through. The test fails with the fix
+  reverted.
+
+- **The SPA fallback answered DELETE with 200 and `index.html`.** With a web
+  build present, `DELETE /projects/1` was served the frontend as a success
+  while deleting nothing. The fallback now serves GET and HEAD only; every
+  other method falls through to the 404 envelope. Proven with a built frontend
+  present, which is the only setup that showed it.
+
 ### Added
+
+- **Task history is readable.** `GET /tasks/:id/history` returns the task's log
+  newest-first with before and after values, and the detail page renders it as
+  lines in the server's time zone. Exit-test step 8 was unrunnable without it:
+  history was written on every change and visible nowhere.
 
 - **Projects are usable end to end.** Create, rename, archive and restore projects
   through declared API routes and the `/projects` screen; every write runs in one

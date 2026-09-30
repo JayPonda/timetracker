@@ -2,6 +2,7 @@ import {
   criterionResponseSchema,
   errorEnvelopeSchema,
   listCriteriaResponseSchema,
+  listHistoryResponseSchema,
   listProjectsResponseSchema,
   listReferencesResponseSchema,
   listTaskLinksResponseSchema,
@@ -17,6 +18,7 @@ import {
   type CreateTaskLinkInput,
   type CreateTodoInput,
   type Criterion,
+  type HistoryEntry,
   type ListTasksQuery,
   type Project,
   type Reference,
@@ -121,6 +123,15 @@ export async function restoreTask(id: number): Promise<Task> {
 export async function fetchTask(signal: AbortSignal, id: number): Promise<Task> {
   const res = await fetch(`/tasks/${id}`, { signal, headers: { accept: 'application/json' } });
   return readTask(res, 'Could not load the task');
+}
+
+export async function fetchHistory(signal: AbortSignal, taskId: number): Promise<HistoryEntry[]> {
+  const res = await fetch(`/tasks/${taskId}/history`, {
+    signal,
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw await apiError(res, 'Could not load the history');
+  return listHistoryResponseSchema.parse(await res.json()).history;
 }
 
 export async function fetchTodos(

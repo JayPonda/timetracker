@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
-import type { Task, Todo } from '@pdm/shared';
+import type { HistoryEntry, Task, Todo } from '@pdm/shared';
+import { formatClock, isValidTimeZone } from '../../lib/datetime';
 import { TaskCriteria, type TaskCriteriaProps } from './TaskCriteria';
 import { TaskLinks, type TaskLinksProps } from './TaskLinks';
 import { TaskReferences, type TaskReferencesProps } from './TaskReferences';
@@ -55,6 +56,11 @@ export interface TaskDetailViewProps {
   readonly linksProps: TaskLinksProps;
   readonly criteriaProps: TaskCriteriaProps;
   readonly referencesProps: TaskReferencesProps;
+  readonly history: readonly HistoryEntry[] | undefined;
+  readonly historyLoading: boolean;
+  readonly historyError: string | null;
+  /** The server's zone, so times render configured — never the browser's. */
+  readonly timeZone: string | undefined;
 }
 
 const inputClass =
@@ -95,6 +101,10 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
     linksProps,
     criteriaProps,
     referencesProps,
+    history,
+    historyLoading,
+    historyError,
+    timeZone,
   } = props;
 
   if (loading) return <p className="mt-4 text-sm text-neutral-500">Loading the task…</p>;
@@ -390,6 +400,59 @@ export function TaskDetailView(props: TaskDetailViewProps): JSX.Element {
       <div className="mt-6">
         <TaskReferences {...referencesProps} />
       </div>
+
+      <section aria-label="History" className="mt-6">
+        <h3 className="text-sm font-medium">History — what changed, newest first</h3>
+        {historyLoading ? <p className="mt-2 text-sm text-neutral-500">Loading history…</p> : null}
+        {historyError ? (
+          <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-400">
+            {historyError}
+          </p>
+        ) : null}
+        {!historyLoading && !historyError && (history ?? []).length === 0 ? (
+          <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Nothing yet.</p>
+        ) : null}
+        <ol className="mt-2 space-y-2">
+          {(history ?? []).map((entry) => (
+            <li
+              key={entry.uid}
+              className="rounded border border-neutral-200 dark:border-neutral-800 p-3 text-sm"
+            >
+              <p className="font-medium">
+                {actionWord(entry.action)}{' '}
+                <span className="font-normal text-xs text-neutral-500 dark:text-neutral-400">
+                  {timeZone !== undefined && isValidTimeZone(timeZone)
+                    ? formatClock(entry.at, timeZone)
+                    : '—'}
+                </span>
+              </p>
+              {entry.after !== null ? (
+                <ul className="mt-1 text-xs text-neutral-600 dark:text-neutral-400 space-y-0.5">
+                  {Object.keys(entry.after).map((field) => (
+                    <li key={field}>
+                      {field}: {formatValue(entry.before?.[field])} →{' '}
+                      {formatValue(entry.after?.[field])}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
+}
+
+/** The action as a word, because a history that says “updated” says nothing. */
+function actionWord(action: string): string {
+  if (action === 'created') return 'Created';
+  if (action === 'archived') return 'Archived';
+  if (action === 'restored') return 'Restored';
+  return 'Updated';
+}
+
+/** A changed value as text. JSON, because a value may be a string, a number or null. */
+function formatValue(value: unknown): string {
+  return JSON.stringify(value) ?? '—';
 }

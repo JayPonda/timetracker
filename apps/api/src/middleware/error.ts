@@ -107,7 +107,12 @@ export function registerErrorEnvelope(app: FastifyInstance, webDir: string | und
     const path = req.url.split('?')[0] ?? '';
     const looksLikeAsset = /\.[a-z0-9]+$/i.test(path);
 
-    if (indexPath && !path.startsWith('/api')) {
+    // The fallback serves pages, and pages are fetched with GET. Answering a
+    // DELETE with 200 and HTML — which is what happened in production, where a
+    // web build exists and the tests' no-build setup never saw it — tells a
+    // client its deletion succeeded while deleting nothing. Every other method
+    // falls through to the 404 envelope below.
+    if (indexPath && !path.startsWith('/api') && (req.method === 'GET' || req.method === 'HEAD')) {
       // A real asset is served as itself; anything else is a client-side route,
       // which the frontend router resolves.
       if (looksLikeAsset) {

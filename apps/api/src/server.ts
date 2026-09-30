@@ -8,7 +8,11 @@ import { nowMs } from '@pdm/shared';
 import type { AppConfig } from './config/index.js';
 import { logger } from './lib/logger.js';
 import { registerErrorEnvelope } from './middleware/error.js';
-import { decoratePrincipal, type PrincipalResolver } from './middleware/principal.js';
+import {
+  decoratePrincipal,
+  defaultPrincipalResolver,
+  type PrincipalResolver,
+} from './middleware/principal.js';
 import { decorateServices } from './middleware/services.js';
 import { registerRequestId } from './middleware/request-id.js';
 import { createActivityLogService } from './services/activity-log.service.js';
@@ -37,7 +41,10 @@ export interface CreateServerOptions {
   knex: Knex;
   /**
    * Overridable so a test can install a principal that lacks a capability
-   * (criterion 12). Production leaves it unset.
+   * (criterion 12). Unset means the default resolver — the local user — which
+   * is what production runs: without it every guarded route refuses with 403
+   * and the interface can do nothing, a failure no test caught until a live
+   * container was driven for the first time.
    */
   principalResolver?: PrincipalResolver;
   /**
@@ -110,8 +117,12 @@ export function createServer({
     references: createReferenceService(knex, activityLog),
     tags: createTagService(knex, activityLog),
   });
+  // The resolver is installed even when the caller passes none, because the
+  // alternative is every request arriving anonymous: production passes none,
+  // and an unset resolver meant the whole API refused with 403 while every
+  // test — each installing its own resolver — stayed green.
   registerRoutes(app, buildRouteTable({ db, config, startedAtMs, extraRoutes }), {
-    principalResolver,
+    principalResolver: principalResolver ?? defaultPrincipalResolver,
   });
   // Registered last: the SPA fallback owns the not-found handler, so it is
   // installed only after every API route and every real asset has claimed its

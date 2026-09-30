@@ -1,6 +1,7 @@
 export * from './capabilities.js';
 export * from './clock.js';
 export * from './criteria.js';
+export * from './history.js';
 export * from './http.js';
 export * from './projects.js';
 export * from './references.js';
