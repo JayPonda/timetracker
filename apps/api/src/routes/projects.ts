@@ -82,7 +82,7 @@ export function projectRoutes(): readonly RouteDeclaration[] {
       handler: async (req, reply) => {
         const input = parseOrThrow(createProjectSchema, req.body ?? {});
         const project = await req.server.services.projects.create(input);
-        logger.debug('projects.ts', 'POST /api/projects', 'created', { project_id: project.id });
+        logger.debug('projects.ts', 'POST /api/v1/projects', 'created', { project_id: project.id });
         return reply.status(201).send({ project });
       },
     },

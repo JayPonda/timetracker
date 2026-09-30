@@ -149,3 +149,111 @@ describe('MCP-14: the assistant may add references but may never change them', (
     }
   });
 });
+
+describe('FR-REF-02: GET /references/:id reads one reference', () => {
+  it('returns the stored reference', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = referenceSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/references`,
+        payload: { title: 'The ADR' },
+      })).json<{ reference: unknown }>().reference,
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/references/${created.id}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(referenceSchema.parse(res.json<{ reference: unknown }>().reference).id).toBe(created.id);
+  });
+
+  it('is a 404 for a reference that does not exist', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/references/9999' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
+  });
+});
+
+describe('DATA-09: a reference id is validated before it reaches a service', () => {
+  it('refuses a non-numeric id with a 422 rather than coercing it to 0', async () => {
+    // `Number('abc')` is NaN, so an unchecked parse would query row 0 and answer
+    // "not found" — a 404 that reads as a missing reference instead of a
+    // malformed request. Different bugs, different fixes.
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/references/abc' });
+
+    expect(res.statusCode).toBe(422);
+    expect((res.json<ErrorEnvelope>().error.details as { issues: Array<{ path: string }> }).issues[0]?.path).toBe('id');
+  });
+
+  it('refuses a zero id', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/references/0' });
+
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('applies the same rule to PATCH', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/references/abc',
+      payload: { title: 'renamed' },
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});
+
+describe('FR-REF-01: PATCH /references/:id edits the reference', () => {
+  it('retitles the reference and returns it', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = referenceSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/references`,
+        payload: { title: 'The ADR' },
+      })).json<{ reference: unknown }>().reference,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/references/${created.id}`,
+      payload: { title: 'ADR 0013' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(referenceSchema.parse(res.json<{ reference: unknown }>().reference).title).toBe('ADR 0013');
+  });
+
+  it('refuses an empty body with a 422', async () => {
+    // The schema refines on "at least one field", so a PATCH that changes
+    // nothing is a client bug rather than a successful no-op.
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = referenceSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/references`,
+        payload: { title: 'The ADR' },
+      })).json<{ reference: unknown }>().reference,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/references/${created.id}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.VALIDATION_FAILED);
+  });
+});

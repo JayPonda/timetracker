@@ -192,3 +192,125 @@ describe('MCP-14: the assistant may add todos but may never change them', () => 
     }
   });
 });
+
+describe('FR-TODO-02: GET /todos/:id reads one todo', () => {
+  it('returns the stored todo', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = todoSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/todos`,
+        payload: { title: 'Draft the ADR' },
+      })).json<{ todo: unknown }>().todo,
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/todos/${created.id}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(todoSchema.parse(res.json<{ todo: unknown }>().todo).id).toBe(created.id);
+  });
+
+  it('is a 404 for a todo that does not exist', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/todos/9999' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
+  });
+});
+
+describe('DATA-09: a todo id is validated before it reaches a service', () => {
+  it('refuses a non-numeric id with a 422 rather than coercing it to 0', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/todos/abc' });
+
+    expect(res.statusCode).toBe(422);
+    expect((res.json<ErrorEnvelope>().error.details as { issues: Array<{ path: string }> }).issues[0]?.path).toBe('id');
+  });
+
+  it('refuses a zero id', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/todos/0' });
+
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('applies the same rule to PATCH, so a tick cannot land on row 0', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/todos/abc',
+      payload: { done: true },
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});
+
+describe('FR-TODO-01: PATCH /todos/:id edits the title and the note', () => {
+  it('renames the todo and returns it', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = todoSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/todos`,
+        payload: { title: 'Draft the ADR' },
+      })).json<{ todo: unknown }>().todo,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/todos/${created.id}`,
+      payload: { title: 'Write ADR 0013' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(todoSchema.parse(res.json<{ todo: unknown }>().todo).title).toBe('Write ADR 0013');
+  });
+
+  it('refuses an empty body with a 422', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = todoSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/todos`,
+        payload: { title: 'Draft the ADR' },
+      })).json<{ todo: unknown }>().todo,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/todos/${created.id}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('refuses an empty title, because an untitled phase is not a phase', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = todoSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/todos`,
+        payload: { title: 'Draft the ADR' },
+      })).json<{ todo: unknown }>().todo,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/todos/${created.id}`,
+      payload: { title: '' },
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});

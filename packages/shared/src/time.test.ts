@@ -154,3 +154,50 @@ describe('NFR-TIME-01: a date range covers every day in it', () => {
     expect(dateKeyRange(0, utc(9999, 12, 31), tz)).toHaveLength(4000);
   });
 });
+
+describe('NFR-TIME-01: a broken Intl implementation is reported, not silently zeroed', () => {
+  it('throws when Intl omits a part, rather than reading it as zero', async () => {
+    // The guard exists because the alternative is silent corruption. If
+    // `formatToParts` ever stops returning `month` — a stripped-down runtime, a
+    // polyfill, a future ICU change — then `Number(undefined)` is `NaN` and
+    // `Number(null)` is `0`, so a missing part would quietly become midnight on
+    // the first of the month. A date key drives which day totals are computed
+    // for, so a wrong one is a wrong timesheet with nothing to indicate it.
+    //
+    // The condition is provoked by replacing `formatToParts` rather than by
+    // stubbing the module, so the test still exercises the real lookup.
+    const original = Intl.DateTimeFormat.prototype.formatToParts;
+    Intl.DateTimeFormat.prototype.formatToParts = function stub(): Intl.DateTimeFormatPart[] {
+      return [{ type: 'year', value: '2026' }] as Intl.DateTimeFormatPart[];
+    };
+
+    try {
+      expect(() => zonedParts(utc(2026, 3, 10), 'UTC')).toThrow(/Intl did not return/);
+    } finally {
+      Intl.DateTimeFormat.prototype.formatToParts = original;
+    }
+  });
+
+  it('names the zone in the message, so the bad configuration is obvious', async () => {
+    const original = Intl.DateTimeFormat.prototype.formatToParts;
+    Intl.DateTimeFormat.prototype.formatToParts = function stub(): Intl.DateTimeFormatPart[] {
+      return [] as Intl.DateTimeFormatPart[];
+    };
+
+    try {
+      expect(() => zonedParts(utc(2026, 3, 10), 'Asia/Kolkata')).toThrow(/Asia\/Kolkata/);
+    } finally {
+      Intl.DateTimeFormat.prototype.formatToParts = original;
+    }
+  });
+
+  it('still returns real parts once Intl behaves, so the stub proved nothing false', () => {
+    // Without this, a test that stubs Intl and asserts a throw would also pass
+    // if `zonedParts` threw unconditionally. The positive case is what shows the
+    // throw is caused by the missing part and not by the test.
+    const parts = zonedParts(utc(2026, 3, 10), 'UTC');
+
+    expect(parts.year).toBe(2026);
+    expect(parts.month).toBe(3);
+  });
+});

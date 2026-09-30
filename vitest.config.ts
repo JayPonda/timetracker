@@ -92,6 +92,50 @@ export default defineConfig({
         'packages/shared/src/**/*.ts',
       ],
       exclude: ['**/*.test.ts', '**/test/**', '**/index.ts', '**/test-support.ts'],
+      /**
+       * **`perFile: true`** — every one of these floors is applied to each file
+       * individually, not to the average of a group.
+       *
+       * Owner decision 2026-09-30. The aggregate form had a hole worth naming: a
+       * glob threshold is satisfied by the *mean* of its group, so
+       * `middleware/error.ts` sat at 76.47% statements and 66.66% functions while
+       * the 80% gate stayed green, because its three colleagues averaged it up.
+       * A group gate cannot catch one collapsing file, and a coverage number that
+       * cannot catch a collapse is decoration.
+       *
+       * Turning it on is what forced the gaps to be closed rather than averaged
+       * away. It found, and this session then removed or covered:
+       *
+       * - `envelopeFor` in `middleware/error.ts` — exported "for the route table's
+       *   tests", called by nothing. Dead code, so it was deleted, not tested.
+       * - `activityLog.listSince` — a real query with a real ordering contract that
+       *   no service called, so it had no test at all. Tested rather than deleted,
+       *   because deleting a repository capability a later release may want is
+       *   worse than a test.
+       * - The `parseId` guards in five route modules, which reject a malformed
+       *   `:id`. Untested, and they are the difference between a 422 and a silent
+       *   query for row 0.
+       * - `resolveError`'s 400 and 404 mappings, which no current code path
+       *     reaches but which must stay correct the moment a route adopts a
+       *     Fastify schema.
+       *
+       * Two things are still below a per-file floor and are **left visible on
+       * purpose**, because both are defensive code that the real dispatch makes
+       * unreachable:
+       *
+       * - `middleware/error.ts` 133-134, the SPA fallback serving an asset that
+       *   exists. `@fastify/static` is configured with `wildcard: false`, which
+       *   makes it glob every file at boot and register a route per file — so a
+       *   file that exists was already served before the request could reach the
+       *   not-found handler, and a file that does not fails `existsSync`. The
+       *   branch cannot execute in production. It is kept as a path-traversal
+       *   guard, and it is the last thing that would be deleted.
+       * - `routes/probes.ts` 65, `cause instanceof Error ? … : String(cause)`.
+       *
+       * Both are covered by group average rather than per file, and that is a
+       * deliberate, documented exception rather than a gate someone tuned down.
+       */
+      perFile: true,
       thresholds: {
         'apps/api/src/services/**': {
           statements: 95,

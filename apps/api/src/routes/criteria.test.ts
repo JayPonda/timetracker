@@ -154,3 +154,107 @@ describe('MCP-14: the assistant may add criteria but may never change them', () 
     }
   });
 });
+
+describe('FR-AC-02: GET /criteria/:id reads one criterion', () => {
+  it('returns the stored criterion', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = criterionSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/criteria`,
+        payload: { text: 'The gate is enforced in the backend' },
+      })).json<{ criterion: unknown }>().criterion,
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/criteria/${created.id}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(criterionSchema.parse(res.json<{ criterion: unknown }>().criterion).id).toBe(created.id);
+  });
+
+  it('is a 404 for a criterion that does not exist', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/criteria/9999' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
+  });
+});
+
+describe('DATA-09: a criterion id is validated before it reaches a service', () => {
+  it('refuses a non-numeric id with a 422 rather than coercing it to 0', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/criteria/abc' });
+
+    expect(res.statusCode).toBe(422);
+    expect((res.json<ErrorEnvelope>().error.details as { issues: Array<{ path: string }> }).issues[0]?.path).toBe('id');
+  });
+
+  it('refuses a zero id, which a client cannot mean', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/criteria/0' });
+
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('applies the same rule to PATCH', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/criteria/abc',
+      payload: { text: 'rewritten' },
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});
+
+describe('FR-AC-01: PATCH /criteria/:id rewrites the criterion text', () => {
+  it('rewrites the text and returns it', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = criterionSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/criteria`,
+        payload: { text: 'The gate is enforced in the backend' },
+      })).json<{ criterion: unknown }>().criterion,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/criteria/${created.id}`,
+      payload: { text: 'The gate is enforced in the service layer' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(criterionSchema.parse(res.json<{ criterion: unknown }>().criterion).text).toBe(
+      'The gate is enforced in the service layer',
+    );
+  });
+
+  it('refuses an empty body, because an empty criterion is not a criterion', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = criterionSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/criteria`,
+        payload: { text: 'The gate is enforced in the backend' },
+      })).json<{ criterion: unknown }>().criterion,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/criteria/${created.id}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});

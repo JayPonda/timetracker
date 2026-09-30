@@ -202,3 +202,99 @@ describe('the response status and the envelope code agree', () => {
     expect(body.error.code).toBe(ERROR_CODES.CAPABILITY_DENIED);
   });
 });
+
+/**
+ * `resolveError` maps whatever was thrown into the envelope, and three of its
+ * shapes are not `AppError`: a Fastify schema rejection (400), a not-found
+ * raised as an error rather than by the not-found handler (404), and anything
+ * unrecognised (500).
+ *
+ * These are defensive mappings for errors the application's own code does not
+ * currently raise — every route validates with zod and returns a 404 through the
+ * not-found handler. They are still mapped, because the moment a route adopts a
+ * Fastify schema, or a plugin throws something with a `statusCode`, a 500 would
+ * be the wrong answer and the mapping is what prevents it. The test pins the
+ * mapping rather than the current absence of the cause.
+ */
+describe('the error mapper recognises a non-AppError statusCode', () => {
+  /** A bare error carrying a statusCode, the shape Fastify and plugins use. */
+  function httpError(statusCode: number, message: string): Error {
+    return Object.assign(new Error(message), { statusCode });
+  }
+
+  it('maps a 400 to a 422 with the validation code', async () => {
+    const { app } = await appThatThrows(httpError(400, 'body must have required property name'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+    const body = res.json<ErrorEnvelope>();
+
+    // 400 becomes 422 on purpose: this API's refusals are 422, and a client
+    // should not have to learn a second validation status from Fastify.
+    expect(res.statusCode).toBe(422);
+    expect(body.error.code).toBe(ERROR_CODES.VALIDATION_FAILED);
+  });
+
+  it('keeps the message, because it names the field that was wrong', async () => {
+    const { app } = await appThatThrows(httpError(400, 'body must have required property name'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+
+    expect(res.json<ErrorEnvelope>().error.message).toContain('required property name');
+  });
+
+  it('maps a 404 to a 404 with the not-found code', async () => {
+    const { app } = await appThatThrows(httpError(404, 'No such widget'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+    const body = res.json<ErrorEnvelope>();
+
+    expect(res.statusCode).toBe(404);
+    expect(body.error.code).toBe(ERROR_CODES.NOT_FOUND);
+  });
+
+  it('keeps a 404 message rather than replacing it', async () => {
+    const { app } = await appThatThrows(httpError(404, 'No such widget'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+
+    expect(res.json<ErrorEnvelope>().error.message).toBe('No such widget');
+  });
+
+  it('does not pass a 403 through, because an unrecognised status is a fault', async () => {
+    const { app } = await appThatThrows(httpError(403, 'Not allowed'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+    const body = res.json<ErrorEnvelope>();
+
+    // Only 400 and 404 are trusted. A capability refusal in this app is an
+    // `AppError`, raised by the middleware and mapped before this point — so a
+    // bare error carrying 403 means something unrecognised failed, and saying
+    // 500 is the honest answer. Echoing 403 would blame the client for a fault
+    // on our side and tell them to fix a request that was fine.
+    expect(res.statusCode).toBe(500);
+    expect(body.error.code).toBe(ERROR_CODES.INTERNAL);
+    expect(body.error.message).toBe('Internal server error');
+  });
+
+  it('treats a statusCode below 400 as unknown, so it becomes a 500', async () => {
+    // A `statusCode: 200` on a thrown error means something is confused. Trusting
+    // it would produce a 200 with an error body, which no client can interpret.
+    const { app } = await appThatThrows(httpError(200, 'not really an error'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.INTERNAL);
+  });
+
+  it('uses the generic message for a 500, never the thrown one', async () => {
+    const { app } = await appThatThrows(new Error('SQLITE_CONSTRAINT: /data/pdm.db'));
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+
+    // The thrown message names a file path and a constraint. It goes to the log,
+    // which an owner can read; it does not go to the client.
+    expect(res.json<ErrorEnvelope>().error.message).toBe('Internal server error');
+  });
+
+  it('handles a thrown string, which has no statusCode at all', async () => {
+    const { app } = await appThatThrows('just a string');
+    const res = await app.inject({ method: 'POST', url: '/api/v1/test-throws' });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.INTERNAL);
+  });
+});

@@ -73,7 +73,7 @@ export function tagRoutes(): readonly RouteDeclaration[] {
       handler: async (req, reply) => {
         const input = parseOrThrow(createTagSchema, req.body ?? {});
         const tag = await req.server.services.tags.create(input);
-        logger.debug('tags.ts', 'POST /api/tags', 'created', { tag_id: tag.id });
+        logger.debug('tags.ts', 'POST /api/v1/tags', 'created', { tag_id: tag.id });
         return reply.status(201).send({ tag });
       },
     },

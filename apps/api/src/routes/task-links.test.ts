@@ -175,3 +175,125 @@ describe('MCP-14: the assistant may add links but may never change them', () => 
     }
   });
 });
+
+describe('FR-TASK-02: GET /task-links/:id reads one link', () => {
+  it('returns the stored link', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = taskLinkSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/links`,
+        payload: { url: 'https://example.com/adr' },
+      })).json<{ link: unknown }>().link,
+    );
+
+    const res = await app.inject({ method: 'GET', url: `/api/v1/task-links/${created.id}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(taskLinkSchema.parse(res.json<{ link: unknown }>().link).id).toBe(created.id);
+  });
+
+  it('is a 404 for a link that does not exist', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/task-links/9999' });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json<ErrorEnvelope>().error.code).toBe(ERROR_CODES.NOT_FOUND);
+  });
+});
+
+describe('DATA-09: a link id is validated before it reaches a service', () => {
+  it('refuses a non-numeric id with a 422 rather than coercing it to 0', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/task-links/abc' });
+
+    expect(res.statusCode).toBe(422);
+    expect((res.json<ErrorEnvelope>().error.details as { issues: Array<{ path: string }> }).issues[0]?.path).toBe('id');
+  });
+
+  it('refuses a fractional id', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/task-links/1.5' });
+
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('applies the same rule to PATCH', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/task-links/abc',
+      payload: { label: 'renamed' },
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});
+
+describe('FR-TASK-03: PATCH /task-links/:id edits label and URL', () => {
+  it('relabels the link and returns it', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = taskLinkSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/links`,
+        payload: { url: 'https://example.com/adr' },
+      })).json<{ link: unknown }>().link,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/task-links/${created.id}`,
+      payload: { label: 'The decision record' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(taskLinkSchema.parse(res.json<{ link: unknown }>().link).label).toBe('The decision record');
+  });
+
+  it('refuses an empty body with a 422', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = taskLinkSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/links`,
+        payload: { url: 'https://example.com/adr' },
+      })).json<{ link: unknown }>().link,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/task-links/${created.id}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+
+  it('refuses a relative URL, because a link that cannot be opened is not a link', async () => {
+    const { app } = await appHolding({ holds: LOCAL_USER_CAPABILITIES });
+    const taskId = await liveTaskId();
+    const created = taskLinkSchema.parse(
+      (await app.inject({
+        method: 'POST',
+        url: `/api/v1/tasks/${taskId}/links`,
+        payload: { url: 'https://example.com/adr' },
+      })).json<{ link: unknown }>().link,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/task-links/${created.id}`,
+      payload: { url: '/relative/path' },
+    });
+
+    expect(res.statusCode).toBe(422);
+  });
+});

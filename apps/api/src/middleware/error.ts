@@ -184,18 +184,4 @@ export function registerErrorEnvelope(app: FastifyInstance, webDir: string | und
   });
 }
 
-/** Exported for the route table's tests, which assert the shape directly. */
-export function envelopeFor(error: unknown, requestId: string): ErrorEnvelope {
-  const resolved = resolveError(error);
-  return {
-    error: {
-      code: resolved.code,
-      message: resolved.message,
-      status: resolved.status,
-      request_id: requestId,
-      ...(resolved.details === undefined ? {} : { details: resolved.details }),
-    },
-  };
-}
-
 export type { FastifyRequest };
