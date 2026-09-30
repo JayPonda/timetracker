@@ -367,7 +367,7 @@ pnpm typecheck                # tsc --noEmit across workspaces
 # Tests
 pnpm test                     # everything, once
 pnpm test:watch               # watch mode
-pnpm test:coverage            # fails below 95% on business modules; dot reporter in CI
+pnpm test:coverage            # fails below the floors: 95% business, 80% plumbing
 pnpm test:int                 # integration: SSE, migrations, backup and restore
 pnpm test:e2e                 # Playwright (from 1.0.0)
 pnpm test -t 'FR-GATE-05'     # one requirement's tests
@@ -644,7 +644,14 @@ Full detail in `docs/TESTING.md`. The essentials:
 - Freeze the clock through `nowMs()`. **Never `await new Promise(setTimeout)`** in a test.
 - One behaviour per test. If the name contains "and", split it.
 - Service unit tests for rules; `app.inject()` for routes; no network, no ports.
-- ≥80% coverage on `apps/api/src/services/**` and `packages/shared`, enforced in CI.
+- Coverage floors, both enforced by `pnpm test:coverage`:
+  - **≥95%** on `apps/api/src/services/**` and `packages/shared` — the business rules
+  - **≥80%** on `apps/api/src/{repositories,middleware,routes,lib}/**` — the plumbing
+  - Scaffolding (`App.tsx`, `main.tsx`, `version.ts`) is excluded, because a floor that
+    scaffolding can break is a floor people learn to ignore.
+  - **Known limitation:** a glob threshold applies to the *aggregate* of the files
+    matching it, not per file. `middleware/error.ts` is at 76.47% statements today and
+    the gate does not notice, because its group averages 83.05%.
 - A bug fix comes with a test that fails without the fix, named after the requirement that
   was broken.
 

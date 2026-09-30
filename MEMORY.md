@@ -730,6 +730,44 @@ regression**, or you "fix" correct behaviour and add the opposite assertion to t
 
 ---
 
+## 2026-09-30 — Plumbing is now gated at 80% too, and the gate has a hole worth naming
+
+Owner decision: `repositories/**`, `middleware/**`, `routes/**` and `lib/**` are now gated at
+**80%**, not merely measured. `pnpm test:coverage` was reporting them and letting them slide.
+
+This **overrides a judgement recorded in `vitest.config.ts` the day before**, which argued
+against gating them: *"a repository is a query, and a query is verified by the service test
+that uses it; measuring it separately would push tests to exist for coverage's sake."* The
+owner overruled that on the grounds that an ungated number is one that can collapse unnoticed,
+and that "the service test covers it" stays true right up until somebody adds a branch nobody
+exercises. Reasonable. The config comment was rewritten to say so rather than left describing
+a rule the file no longer had — the same stale-comment failure the project has been bitten by
+twice now, once in `ROADMAP.md` and once in the ADR 0009 / drizzle-orm description.
+
+**What the gate does not do, established by running it rather than assumed:** a Vitest glob
+threshold applies to the **aggregate** of the files matching the glob, not to each file. So
+`middleware/error.ts` sits at **76.47% statements and 66.66% functions** and the 80% gate is
+perfectly happy, because `middleware/**` averages 83.05%. Every group passes today, so the
+gate is real — but it is a **group** gate, and one weak file can hide behind healthy
+colleagues. Stated in `vitest.config.ts`, `AGENTS.md` Part 9 and here, because a threshold
+whose strength is misjudged is worse than one that is honestly low.
+
+Closing the hole is not free, which is why it is left to the owner:
+
+| Option | Cost |
+| --- | --- |
+| `thresholds.perFile: true` | Applies to **both** floors, so the 95% business floor then fails on `closure.service.ts` (94.77%) and `time.ts` branches (92.85%). Would mean adding those tests *or* lowering 95%. |
+| Per-file thresholds listed by hand | Verbose and drifts as files are added; nothing fails when a new file appears unlisted. |
+| Leave it | The group average is a real signal, just a coarser one. Weakest file today is 66.66% functions. |
+
+**Also fixed here:** `AGENTS.md` Part 9 still said "≥80% on `services/**` and `packages/shared`"
+in the testing section, and the command list said "fails below 95% on business modules". The
+first had been wrong since 2026-09-29, when the owner raised that floor to 95% — the doc and
+the config had disagreed for a day and the test suite could not tell, because nothing asserts
+that documentation matches configuration. Both now state both floors.
+
+---
+
 ## Open threads
 
 Things a future session should not have to rediscover. Checked and ticked when done.

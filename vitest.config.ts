@@ -45,21 +45,35 @@ export default defineConfig({
     },
 
     /**
-     * The 95% floor on business code (AGENTS.md Part 9, the 0.2.0 Definition of
-     * Done). Raised from 80% by owner decision on 2026-09-29, and it earned its
-     * keep immediately: raising it exposed `dateKeyRange` in `time.ts` having no
-     * test at all.
+     * Two coverage floors, and the difference between them matters.
      *
-     * Scoped to `services/**` and `packages/shared` because those hold the rules.
-     * A threshold on *every* file would be satisfied or broken by scaffolding —
-     * `App.tsx`, `main.tsx`, `version.ts` — and would train the team to ignore it,
-     * which is the way a threshold stops being a gate.
+     * **95% on business code** — `services/**` and `packages/shared` (AGENTS.md
+     * Part 9, the 0.2.0 Definition of Done). Raised from 80% by owner decision
+     * on 2026-09-29, and it earned its keep immediately: raising it exposed
+     * `dateKeyRange` in `time.ts` having no test at all.
      *
-     * `repositories/**` and `middleware/**` are deliberately **not** in the
-     * threshold. A repository is a query, and a query is verified by the service
-     * test that uses it; measuring it separately would push tests to exist for
-     * coverage's sake rather than for a rule's sake. It is still reported, so a
-     * collapse is visible.
+     * **80% on plumbing** — `repositories/**`, `middleware/**`, `routes/**` and
+     * `lib/**`, also by owner decision on 2026-09-30. These were previously
+     * measured but **not gated**, on the argument that a repository is a query
+     * verified by the service test that uses it, so gating it separately pushes
+     * tests to exist for coverage's sake. The owner overrode that: an ungated
+     * number is a number that can collapse unnoticed, and "the service test
+     * covers it" is true right up until someone adds a branch nobody exercises.
+     *
+     * Kept out of the threshold entirely, and deliberately: `App.tsx`,
+     * `main.tsx`, `version.ts` and other scaffolding. A floor that scaffolding
+     * can break is a floor the team learns to ignore, which is how a threshold
+     * stops being a gate.
+     *
+     * **A known hole, stated rather than hidden.** A glob threshold applies to
+     * the **aggregate** of the files matching it, not to each file on its own.
+     * So `middleware/error.ts` sits at 76.47% statements and 66.66% functions
+     * today, and the gate does not notice, because `middleware/**` averages
+     * 83.05%. One file can therefore fall well below 80% while its group holds
+     * the line. Closing that needs either `perFile: true` — which would also
+     * apply per file to the 95% business floor and fail on
+     * `closure.service.ts` at 94.77%, so it is not free — or per-file
+     * thresholds listed by hand. Left as the owner set it; see MEMORY.md.
      *
      * The floor is what makes `pnpm test:coverage` a gate. Without this block the
      * command exits 0 having measured nothing, which is the state it was in until
@@ -90,6 +104,30 @@ export default defineConfig({
           branches: 95,
           functions: 95,
           lines: 95,
+        },
+        'apps/api/src/repositories/**': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
+        },
+        'apps/api/src/middleware/**': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
+        },
+        'apps/api/src/routes/**': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
+        },
+        'apps/api/src/lib/**': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
         },
       },
     },
