@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { Link } from 'react-router-dom';
 import type { Project, Task } from '@pdm/shared';
 import type { TaskFilters } from './api';
 
@@ -345,7 +346,11 @@ export function TasksView(props: TasksViewProps): JSX.Element {
             <li key={task.id} className="rounded border border-neutral-200 dark:border-neutral-800 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-medium">{task.name}</h3>
+                  <h3 className="text-sm font-medium">
+                    <Link to={`/tasks/${task.id}`} className="underline">
+                      {task.name}
+                    </Link>
+                  </h3>
                   <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
                     {task.project_name ?? 'No project'} · Status: {statusWord(task.status)}
                     {task.score !== null ? ` · Score: ${task.score}` : ''}

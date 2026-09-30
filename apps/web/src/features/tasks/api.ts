@@ -2,12 +2,17 @@ import {
   errorEnvelopeSchema,
   listProjectsResponseSchema,
   listTasksResponseSchema,
+  listTodosResponseSchema,
   taskResponseSchema,
+  todoResponseSchema,
   type CreateTaskInput,
+  type CreateTodoInput,
   type ListTasksQuery,
   type Project,
   type Task,
+  type Todo,
   type UpdateTaskInput,
+  type UpdateTodoInput,
 } from '@pdm/shared';
 
 /**
@@ -96,4 +101,71 @@ export async function restoreTask(id: number): Promise<Task> {
     headers: { accept: 'application/json' },
   });
   return readTask(res, 'Could not restore the task');
+}
+
+export async function fetchTask(signal: AbortSignal, id: number): Promise<Task> {
+  const res = await fetch(`/tasks/${id}`, { signal, headers: { accept: 'application/json' } });
+  return readTask(res, 'Could not load the task');
+}
+
+export async function fetchTodos(
+  signal: AbortSignal,
+  taskId: number,
+  includeArchived: boolean,
+): Promise<Todo[]> {
+  const path = includeArchived
+    ? `/tasks/${taskId}/todos?include_archived=true`
+    : `/tasks/${taskId}/todos`;
+  const res = await fetch(path, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw await apiError(res, 'Could not load todos');
+  return listTodosResponseSchema.parse(await res.json()).todos;
+}
+
+async function readTodo(res: Response, fallback: string): Promise<Todo> {
+  if (!res.ok) throw await apiError(res, fallback);
+  return todoResponseSchema.parse(await res.json()).todo;
+}
+
+export async function createTodo(taskId: number, input: CreateTodoInput): Promise<Todo> {
+  const res = await fetch(`/tasks/${taskId}/todos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readTodo(res, 'Could not create the todo');
+}
+
+export async function updateTodo(id: number, input: UpdateTodoInput): Promise<Todo> {
+  const res = await fetch(`/todos/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readTodo(res, 'Could not update the todo');
+}
+
+export async function reorderTodos(taskId: number, order: readonly number[]): Promise<Todo[]> {
+  const res = await fetch(`/tasks/${taskId}/todos/reorder`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ order }),
+  });
+  if (!res.ok) throw await apiError(res, 'Could not reorder the todos');
+  return listTodosResponseSchema.parse(await res.json()).todos;
+}
+
+export async function archiveTodo(id: number): Promise<Todo> {
+  const res = await fetch(`/todos/${id}/archive`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readTodo(res, 'Could not archive the todo');
+}
+
+export async function restoreTodo(id: number): Promise<Todo> {
+  const res = await fetch(`/todos/${id}/restore`, {
+    method: 'PATCH',
+    headers: { accept: 'application/json' },
+  });
+  return readTodo(res, 'Could not restore the todo');
 }

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ActivityLogService } from '../services/activity-log.service.js';
 import type { ProjectService } from '../services/project.service.js';
 import type { TaskService } from '../services/task.service.js';
+import type { TodoService } from '../services/todo.service.js';
 
 /**
  * The services, built once and reached through a Fastify decorator.
@@ -16,6 +17,7 @@ export interface Services {
   readonly activityLog: ActivityLogService;
   readonly projects: ProjectService;
   readonly tasks: TaskService;
+  readonly todos: TodoService;
 }
 
 declare module 'fastify' {

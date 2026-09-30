@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { App } from './App';
 import { ProjectsPage } from './features/projects/ProjectsPage';
+import { TaskDetailPage } from './features/tasks/TaskDetailPage';
 import { TasksPage } from './features/tasks/TasksPage';
 
 /**
@@ -20,6 +21,7 @@ export function Routes_(): JSX.Element {
       <Route path="/" element={<App />} />
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/tasks" element={<TasksPage />} />
+      <Route path="/tasks/:id" element={<TaskDetailPage />} />
       <Route path="/not-found" element={<NotFound />} />
       <Route path="*" element={<Navigate to={KNOWN_PATHS.has(location.pathname) ? '/' : '/not-found'} replace />} />
     </Routes>

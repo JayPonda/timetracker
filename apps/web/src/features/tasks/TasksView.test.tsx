@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router-dom';
 import type { Project, Task } from '@pdm/shared';
 import type { TaskFilters } from './api';
 import { EMPTY_TASK_FORM, TasksView, type TasksViewProps } from './TasksView';
@@ -79,7 +80,13 @@ function view(overrides: Partial<TasksViewProps> = {}): string {
     actionError: null,
     ...overrides,
   };
-  return renderToStaticMarkup(<TasksView {...props} />);
+  // The task names are links to the detail page, so the render needs the
+  // router context they read. `MemoryRouter` supplies it with no DOM.
+  return renderToStaticMarkup(
+    <MemoryRouter>
+      <TasksView {...props} />
+    </MemoryRouter>,
+  );
 }
 
 describe('FR-STAT-04: status is shown in words with its project', () => {

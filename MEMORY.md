@@ -807,6 +807,15 @@ Things a future session should not have to rediscover. Checked and ticked when d
       `/tasks` still needs one `docker compose build && up` verification when the
       daemon is back. This is the second slice in a row blocked on it.
 
+- [x] **2026-09-30: the todo slice is done.** Service, routes and the task detail
+      page with the phases section. Two details worth reusing: reorder takes the
+      complete order and fails closed on a missing or foreign id, because a move
+      with the rest left to guess drops phases; restore appends at the end
+      because positions freed while archived get reused. And a static-markup test
+      of a component that renders a `Link` needs a `MemoryRouter`, or it fails
+      only in the full suite — which is how a green targeted run hid it until
+      the gates ran.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

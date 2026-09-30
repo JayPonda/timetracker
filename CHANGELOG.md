@@ -21,7 +21,13 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
   screen, with project, status and archive filters, sorting, and the “No project”
   bucket. `started_at` is stamped on the first move to In progress and never
   rewritten. `ended` is not writable anywhere in this slice — by type and by
-  test — because only the 0.5.0 closure service may set it. Todos, links,
+  test — because only the 0.5.0 closure service may set it.
+- **Todos are usable end to end.** Add, rename, tick done, reorder, archive and
+  restore phases through declared routes and the task detail page, which also
+  gives every task an address (`/tasks/:id`). `done_at` follows the flag from
+  the server clock; the client never supplies it. Reorder takes the complete
+  order and refuses a partial or foreign one rather than dropping a phase
+  silently; restore appends at the end so live positions stay unique. Links,
   criteria, references and tags are still unbuilt, so the release exit test
   remains blocked.
 
