@@ -18,6 +18,7 @@ import { createTodoService } from './services/todo.service.js';
 import { createTaskLinkService } from './services/task-link.service.js';
 import { createCriterionService } from './services/criterion.service.js';
 import { createReferenceService } from './services/reference.service.js';
+import { createTagService } from './services/tag.service.js';
 import { healthRoute } from './routes/health.js';
 import { projectRoutes } from './routes/projects.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -25,6 +26,7 @@ import { todoRoutes } from './routes/todos.js';
 import { taskLinkRoutes } from './routes/task-links.js';
 import { criterionRoutes } from './routes/criteria.js';
 import { referenceRoutes } from './routes/references.js';
+import { tagRoutes } from './routes/tags.js';
 import { registerRoutes, RouteTable, type RouteDeclaration } from './routes/table.js';
 
 export interface CreateServerOptions {
@@ -106,6 +108,7 @@ export function createServer({
     taskLinks: createTaskLinkService(knex, activityLog),
     criteria: createCriterionService(knex, activityLog),
     references: createReferenceService(knex, activityLog),
+    tags: createTagService(knex, activityLog),
   });
   registerRoutes(app, buildRouteTable({ db, config, startedAtMs, extraRoutes }), {
     principalResolver,
@@ -135,7 +138,7 @@ function buildRouteTable(options: {
 }): RouteTable {
   // Each domain contributes its declarations here, so the table keeps one source
   // for production routes and the audit keeps one object to compare against.
-  const base = [...projectRoutes(), ...taskRoutes(), ...todoRoutes(), ...taskLinkRoutes(), ...criterionRoutes(), ...referenceRoutes()].reduce<RouteTable>(
+  const base = [...projectRoutes(), ...taskRoutes(), ...todoRoutes(), ...taskLinkRoutes(), ...criterionRoutes(), ...referenceRoutes(), ...tagRoutes()].reduce<RouteTable>(
     (table, declaration) => table.declare(declaration),
     new RouteTable().declare(healthRoute(options)),
   );

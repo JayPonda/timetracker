@@ -4,6 +4,7 @@ import { App } from './App';
 import { ProjectsPage } from './features/projects/ProjectsPage';
 import { TaskDetailPage } from './features/tasks/TaskDetailPage';
 import { TasksPage } from './features/tasks/TasksPage';
+import { TagsPage } from './features/tags/TagsPage';
 
 /**
  * Routing.
@@ -13,7 +14,7 @@ import { TasksPage } from './features/tasks/TasksPage';
  * acceptance criterion 12, so an unknown path that is *not* a known destination
  * lands on the not-found page below.
  */
-const KNOWN_PATHS = new Set(['/', '/projects', '/tasks', '/not-found']);
+const KNOWN_PATHS = new Set(['/', '/projects', '/tasks', '/tags', '/not-found']);
 
 export function Routes_(): JSX.Element {
   return (
@@ -22,6 +23,7 @@ export function Routes_(): JSX.Element {
       <Route path="/projects" element={<ProjectsPage />} />
       <Route path="/tasks" element={<TasksPage />} />
       <Route path="/tasks/:id" element={<TaskDetailPage />} />
+      <Route path="/tags" element={<TagsPage />} />
       <Route path="/not-found" element={<NotFound />} />
       <Route path="*" element={<Navigate to={KNOWN_PATHS.has(location.pathname) ? '/' : '/not-found'} replace />} />
     </Routes>

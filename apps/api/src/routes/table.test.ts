@@ -99,6 +99,7 @@ describe('MCP-14: the assistant may never be granted task:close', () => {
       CAPABILITIES.TASK_UPDATE,
       CAPABILITIES.TIME_WRITE,
       CAPABILITIES.PROJECT_WRITE,
+      CAPABILITIES.TAG_UPDATE,
       CAPABILITIES.SETTINGS_WRITE,
     ]) {
       expect(MCP_MAX_CAPABILITIES).not.toContain(capability);

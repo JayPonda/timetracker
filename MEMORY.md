@@ -838,6 +838,13 @@ Things a future session should not have to rediscover. Checked and ticked when d
       to nothing that still renders as a link. `null` means “no URL” and the
       schema refuses blank, so all three states stay distinct.
 
+- [x] **2026-09-30: the tags slice is done — the last 0.2.0 domain.** One live
+      tag per name, clashes fail naming the tag, restore refuses a taken name.
+      New `tag:read`/`tag:create`/`tag:update` capabilities; `tag:update` is in
+      the MCP-14 absence test with the other mutating capabilities. Honest gap
+      recorded in the release spec: exit-test step 5's “apply one to a task's
+      tags” needs time entries, which nothing writes until 0.3.0.
+
 ## If you remember one thing
 
 **Nothing is ever deleted, and business rules live in services, not in routes.** Every hard

@@ -4,6 +4,7 @@ export * from './criteria.js';
 export * from './http.js';
 export * from './projects.js';
 export * from './references.js';
+export * from './tags.js';
 export * from './task-links.js';
 export * from './tasks.js';
 export * from './time.js';

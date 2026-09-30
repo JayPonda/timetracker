@@ -43,7 +43,14 @@ when its exit test has passed, and its git tag `vX.Y.Z` is created at the same m
   detail page's references section, with the kind shown in words. An empty URL
   field means no URL, never a blank link. Reads check nothing about the task's
   state and nothing cascades, so a lesson outlives its task by doing nothing.
-  Tags are the last unbuilt domain; the release exit test remains blocked.
+- **The tag manager is usable end to end.** Create, rename, archive and restore
+  tags through declared routes and the `/tags` screen, with one live tag per
+  name: clashes fail naming the tag, archiving releases the name, restoring
+  under a taken one refuses. New `tag:read`/`tag:create`/`tag:update`
+  capabilities say what the assistant may do; `tag:update` is outside its
+  maximum set. Attaching tags to entries waits for entries in 0.3.0, which also
+  leaves half of exit-test step 5 unrunnable. That was the last domain; the
+  release exit test remains blocked.
 
 ### Removed
 
